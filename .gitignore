@@ -1,0 +1,14 @@
+venv/
+__pycache__/
+*.pyc
+config.ini
+.vscode/
+.idea/
+.pytest_cache/
+.coverage
+docs/superpowers/
+dist/
+build/
+*.exe
+.codex/
+.agents/
