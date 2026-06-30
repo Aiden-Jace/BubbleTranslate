@@ -794,7 +794,10 @@ class TranslationBubble(QWidget):
     # --- 交互逻辑 ---
 
     def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton:
+        if event.button() == Qt.RightButton:
+            self.hide()
+            event.accept()
+        elif event.button() == Qt.LeftButton:
             self._dragging = True
             self._drag_position = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
             event.accept()
@@ -810,7 +813,3 @@ class TranslationBubble(QWidget):
         self._ensure_within_screen()
         event.accept()
 
-    def mouseDoubleClickEvent(self, event):
-        """双击关闭气泡"""
-        self.hide()
-        event.accept()
