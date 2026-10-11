@@ -8,7 +8,7 @@ project_root = os.path.dirname(current_dir)
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from PySide6.QtWidgets import QApplication, QMainWindow, QSystemTrayIcon, QMenu, QStyle, QWidget
+from PySide6.QtWidgets import QApplication, QMainWindow, QSystemTrayIcon, QMenu, QStyle, QWidget, QMessageBox
 from PySide6.QtCore import Qt, QObject, QEvent, QTimer
 from PySide6.QtGui import QPixmap, QImage, QAction, QCursor
 
@@ -110,8 +110,10 @@ class BubbleTranslateApp(QMainWindow):
         self.event_filter = GlobalEventFilter(self)
         QApplication.instance().installEventFilter(self.event_filter)
 
-        # 启动热键监听 (Alt + Z)
+        # 启动用户配置的全局快捷键监听。
         self.listener = HotkeyListener()
+        self.listener.registration_failed.connect(self.show_hotkey_error)
+        self.listener.hotkeys_changed.connect(self.update_hotkey_tooltip)
         self.listener.trigger_signal.connect(self.start_capture_mode)
         self.listener.text_trigger_signal.connect(self.start_text_translation)
         self.listener.selection_drag_finished.connect(
@@ -133,7 +135,7 @@ class BubbleTranslateApp(QMainWindow):
             }
             print(f"翻译模式: {provider_names.get(config.TRANSLATION_MODE, config.TRANSLATION_MODE)}")
         print(f"目标语言: {config.DEFAULT_TARGET_LANGUAGE}")
-        print("操作: Alt + Z 开启截图, Ctrl + Q 划词翻译, 左键拖拽翻译, 双击右键退出")
+        print(f"操作: {config.SCREENSHOT_HOTKEY} 开启截图, {config.TEXT_HOTKEY} 划词翻译, 左键拖拽翻译, 双击右键退出")
 
     def init_tray(self):
         self.tray_icon = QSystemTrayIcon(self)
@@ -147,7 +149,7 @@ class BubbleTranslateApp(QMainWindow):
             self.tray_icon.setIcon(self.style().standardIcon(QStyle.SP_TitleBarMenuButton))
 
         # 悬浮提示快捷键
-        self.tray_icon.setToolTip("气泡翻译\nAlt + Z: 截图翻译\nCtrl + Q: 划词翻译")
+        self.update_hotkey_tooltip(*self.listener.hotkeys)
         
         menu = QMenu()
         
@@ -169,10 +171,16 @@ class BubbleTranslateApp(QMainWindow):
         if not self.config_window:
             self.config_window = ConfigWindow()
             self.config_window.settings_saved.connect(self.apply_saved_settings)
+            self.config_window.closed.connect(self.resume_hotkeys)
+        self.listener.set_hotkeys_enabled(False)
         self.config_window.refresh_language_settings()
+        self.config_window.refresh_hotkey_settings()
         self.config_window.show()
         self.config_window.activateWindow()
         self.config_window.raise_()
+
+    def resume_hotkeys(self):
+        self.listener.set_hotkeys_enabled(True)
 
     def ensure_bubble(self):
         if not self.bubble:
@@ -182,6 +190,7 @@ class BubbleTranslateApp(QMainWindow):
         return self.bubble
 
     def apply_saved_settings(self, provider, source_language, target_language):
+        self.listener.update_hotkeys(config.SCREENSHOT_HOTKEY, config.TEXT_HOTKEY)
         if not config.AUTO_SELECTION_ENABLED:
             self.selection_reader.cancel()
             self.selection_tip.hide()
@@ -196,6 +205,12 @@ class BubbleTranslateApp(QMainWindow):
                 source_language,
                 target_language,
             )
+
+    def update_hotkey_tooltip(self, screenshot, text):
+        self.tray_icon.setToolTip(f"气泡翻译\n{screenshot}: 截图翻译\n{text}: 划词翻译")
+
+    def show_hotkey_error(self, message):
+        QMessageBox.warning(self.config_window, "快捷键未生效", message)
 
     def update_status(self, msg):
         """

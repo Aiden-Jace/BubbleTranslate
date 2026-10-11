@@ -83,7 +83,9 @@ defaults = {
     },
     'System': {
         'AUTO_START': "False",
-        'AUTO_SELECTION_ENABLED': "True"
+        'AUTO_SELECTION_ENABLED': "True",
+        'SCREENSHOT_HOTKEY': "F1",
+        'TEXT_HOTKEY': "F2",
     }
 }
 
@@ -158,6 +160,8 @@ BUBBLE_DEFAULT_POSITION = _parser.get('UI', 'BUBBLE_DEFAULT_POSITION', fallback=
 STREAM_OUTPUT = _parser.getboolean('UI', 'STREAM_OUTPUT')
 
 AUTO_START = _parser.getboolean('System', 'AUTO_START')
+SCREENSHOT_HOTKEY = _parser.get('System', 'SCREENSHOT_HOTKEY', fallback='F1')
+TEXT_HOTKEY = _parser.get('System', 'TEXT_HOTKEY', fallback='F2')
 AUTO_SELECTION_ENABLED = _parser.getboolean(
     'System',
     'AUTO_SELECTION_ENABLED',
@@ -249,6 +253,8 @@ _ini_to_global_map = {
     'BUBBLE_WIDTH_PERCENT': 'BUBBLE_WIDTH_PERCENT',
     'STREAM_OUTPUT': 'STREAM_OUTPUT',
     'AUTO_START': 'AUTO_START',
+    'SCREENSHOT_HOTKEY': 'SCREENSHOT_HOTKEY',
+    'TEXT_HOTKEY': 'TEXT_HOTKEY',
     'AUTO_SELECTION_ENABLED': 'AUTO_SELECTION_ENABLED',
 }
 

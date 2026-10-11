@@ -31,9 +31,9 @@ A lightweight and configurable desktop translator for screenshots and selected t
 
 | 功能 | 说明 |
 | --- | --- |
-| 截图翻译 | 使用 `Alt + Z` 框选屏幕区域并翻译 |
+| 截图翻译 | 使用 `F1` 框选屏幕区域并翻译 |
 | 自动划词提示 | 拖选文本后在选区旁显示翻译按钮 |
-| 划词翻译 | 使用 `Ctrl + Q` 翻译当前选中的文本 |
+| 划词翻译 | 使用 `F2` 翻译当前选中的文本 |
 | 手动翻译 | 未检测到选中文本时自动打开编辑气泡 |
 | 双阶段识别 | 支持专用 OCR 识别后翻译 |
 | VLM 识别 | 支持视觉语言模型识别截图后翻译 |
@@ -49,7 +49,7 @@ A lightweight and configurable desktop translator for screenshots and selected t
 #### 截图翻译
 
 ```text
-Alt + Z
+F1
    ↓
 框选屏幕区域
    ↓
@@ -66,7 +66,7 @@ OCR 专用模型 / VLM 识别原文
 选中文字
    ↓
 选区旁显示翻译按钮，点击按钮
-或直接按 Ctrl + Q
+或直接按 F2
    ↓
 读取剪贴板并立即恢复原内容
    ↓
@@ -123,10 +123,12 @@ python -m src.main
 
 ### 快捷键
 
+可在 **设置 → 快捷键** 中自定义截屏翻译和划词翻译按键，支持单键及组合键。点击输入框录入，保存后立即生效，也可恢复默认 F1 / F2。打开设置时暂停翻译快捷键，关闭设置后恢复。
+
 | 操作 | Windows | macOS |
 | --- | --- | --- |
-| 截图翻译 | `Alt + Z` | `Control + Option + Z` |
-| 划词/手动翻译 | `Ctrl + Q` | `Control + Q` |
+| 截图翻译 | `F1` | `F1` |
+| 划词/手动翻译 | `F2` | `F2` |
 | 退出截图模式 | 双击右键或 `Esc` | 双击右键或 `Esc` |
 
 ### 配置
@@ -231,9 +233,9 @@ It supports local or remote OpenAI-compatible models as well as DeepL, Baidu Tra
 
 | Feature | Description |
 | --- | --- |
-| Screenshot translation | Press `Alt + Z` and select any screen region |
+| Screenshot translation | Press `F1` and select any screen region |
 | Automatic selection tip | Shows a translate button next to dragged text |
-| Selected-text translation | Press `Ctrl + Q` to translate selected text |
+| Selected-text translation | Press `F2` to translate selected text |
 | Manual input | Opens the editor when no selected text is detected |
 | OCR pipeline | Recognize text with a dedicated OCR model before translation |
 | VLM pipeline | Recognize screenshots with a vision-language model |
@@ -286,10 +288,12 @@ source venv/bin/activate
 
 ### Keyboard Shortcuts
 
+Customize screenshot and selected-text shortcuts in **Settings → Shortcuts**. Click an input and press a key or key combination; save to apply immediately, or restore F1 / F2. Translation shortcuts pause while settings are open and resume when settings close.
+
 | Action | Windows | macOS |
 | --- | --- | --- |
-| Screenshot translation | `Alt + Z` | `Control + Option + Z` |
-| Selected text / manual input | `Ctrl + Q` | `Control + Q` |
+| Screenshot translation | `F1` | `F1` |
+| Selected text / manual input | `F2` | `F2` |
 | Exit capture mode | Double right-click or `Esc` | Double right-click or `Esc` |
 
 ### Configuration

@@ -2,18 +2,20 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                              QLineEdit, QComboBox, QPushButton, QFormLayout, 
                              QGroupBox, QCheckBox, QMessageBox,
                              QSlider, QSpinBox, QColorDialog, QTabWidget,
-                             QScrollArea, QFrame)
+                             QScrollArea, QFrame, QKeySequenceEdit)
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QIcon, QColor
+from PySide6.QtGui import QIcon, QColor, QKeySequence
 import src.config as config
 from src.core.autostart import set_autostart
 import os
 import requests
 from src.core import translation_services
+from src.core.hotkeys import validate_hotkeys
 from src.resources import resource_path
 
 class ConfigWindow(QWidget):
     settings_saved = Signal(str, str, str)
+    closed = Signal()
 
     def __init__(self):
         super().__init__()
@@ -134,6 +136,27 @@ class ConfigWindow(QWidget):
         settings_layout.addWidget(core_group)
         settings_layout.addStretch()
         self.tabs.addTab(settings_page, "设置")
+
+        hotkey_page = QWidget()
+        hotkey_layout = QVBoxLayout(hotkey_page)
+        hotkey_layout.setContentsMargins(16, 16, 16, 16)
+        hotkey_group = QGroupBox("翻译快捷键")
+        hotkey_form = QFormLayout(hotkey_group)
+        self.screenshot_hotkey_edit = QKeySequenceEdit(QKeySequence(config.SCREENSHOT_HOTKEY))
+        self.text_hotkey_edit = QKeySequenceEdit(QKeySequence(config.TEXT_HOTKEY))
+        for editor in (self.screenshot_hotkey_edit, self.text_hotkey_edit):
+            editor.setMaximumSequenceLength(1)
+        hotkey_form.addRow("截屏翻译:", self.screenshot_hotkey_edit)
+        hotkey_form.addRow("划词翻译:", self.text_hotkey_edit)
+        hotkey_hint = QLabel("点击输入框后按下快捷键。默认 F1 截屏翻译，F2 划词翻译。保存后立即生效。")
+        hotkey_hint.setWordWrap(True)
+        hotkey_form.addRow(hotkey_hint)
+        reset_hotkeys_button = QPushButton("恢复默认快捷键")
+        reset_hotkeys_button.clicked.connect(self.reset_hotkeys)
+        hotkey_form.addRow(reset_hotkeys_button)
+        hotkey_layout.addWidget(hotkey_group)
+        hotkey_layout.addStretch()
+        self.tabs.addTab(hotkey_page, "快捷键")
 
         # 气泡
         bubble_page = QWidget()
@@ -348,11 +371,23 @@ class ConfigWindow(QWidget):
         self.save_btn.clicked.connect(self.save_config)
         layout.addWidget(self.save_btn)
 
+    def closeEvent(self, event):
+        self.closed.emit()
+        super().closeEvent(event)
+
     def pick_color(self):
         color = QColorDialog.getColor(QColor(self.current_border_color), self, "选择气泡边框颜色")
         if color.isValid():
             self.current_border_color = color.name().upper()
             self.color_preview.setStyleSheet(f"background-color: {self.current_border_color}; border: 1px solid gray;")
+
+    def reset_hotkeys(self):
+        self.screenshot_hotkey_edit.setKeySequence(QKeySequence("F1"))
+        self.text_hotkey_edit.setKeySequence(QKeySequence("F2"))
+
+    def refresh_hotkey_settings(self):
+        self.screenshot_hotkey_edit.setKeySequence(QKeySequence(config.SCREENSHOT_HOTKEY))
+        self.text_hotkey_edit.setKeySequence(QKeySequence(config.TEXT_HOTKEY))
 
     def _store_current_language_selection(self):
         if not self._current_language_provider:
@@ -461,6 +496,14 @@ class ConfigWindow(QWidget):
             target_btn.setText("刷新列表")
 
     def save_config(self):
+        try:
+            screenshot_hotkey, text_hotkey = validate_hotkeys(
+                self.screenshot_hotkey_edit.keySequence().toString(QKeySequence.PortableText),
+                self.text_hotkey_edit.keySequence().toString(QKeySequence.PortableText),
+            )
+        except ValueError as error:
+            QMessageBox.warning(self, "快捷键设置无效", str(error))
+            return
         # 记录自启动变化
         old_autostart = getattr(config, "AUTO_START", False)
         new_autostart = self.autostart_check.isChecked()
@@ -506,6 +549,8 @@ class ConfigWindow(QWidget):
                 ('Youdao', 'APP_SECRET', self.youdao_secret_edit.text()),
                 ('Youdao', 'API_URL', self.youdao_url_edit.text()),
                 ('System', 'AUTO_START', new_autostart),
+                ('System', 'SCREENSHOT_HOTKEY', screenshot_hotkey),
+                ('System', 'TEXT_HOTKEY', text_hotkey),
                 (
                     'System',
                     'AUTO_SELECTION_ENABLED',
