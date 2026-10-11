@@ -191,7 +191,8 @@ class ConfigWindow(QWidget):
         self.opacity_slider.valueChanged.connect(lambda v: self.opacity_label.setText(f"{v}%"))
         opacity_container.addWidget(self.opacity_slider)
         opacity_container.addWidget(self.opacity_label)
-        style_layout.addRow("气泡透明度:", opacity_container)
+        self.opacity_slider.setToolTip("100% 完全不透明；数值越低越透明")
+        style_layout.addRow("气泡不透明度:", opacity_container)
         
         color_container = QHBoxLayout()
         self.current_border_color = getattr(config, "BUBBLE_BORDER_COLOR", "#409EFF")
@@ -205,10 +206,15 @@ class ConfigWindow(QWidget):
         color_container.addStretch()
         style_layout.addRow("边框颜色:", color_container)
         
-        self.font_size_spin = QSpinBox()
-        self.font_size_spin.setRange(8, 30)
-        self.font_size_spin.setValue(getattr(config, "BUBBLE_FONT_SIZE", 11))
-        style_layout.addRow("内容字体大小:", self.font_size_spin)
+        self.source_font_size_spin = QSpinBox()
+        self.source_font_size_spin.setRange(8, 30)
+        self.source_font_size_spin.setValue(config.BUBBLE_SOURCE_FONT_SIZE)
+        style_layout.addRow("原文字体大小:", self.source_font_size_spin)
+
+        self.translation_font_size_spin = QSpinBox()
+        self.translation_font_size_spin.setRange(8, 30)
+        self.translation_font_size_spin.setValue(config.BUBBLE_FONT_SIZE)
+        style_layout.addRow("译文字体大小:", self.translation_font_size_spin)
         
         width_container = QHBoxLayout()
         self.width_slider = QSlider(Qt.Horizontal)
@@ -563,7 +569,8 @@ class ConfigWindow(QWidget):
                 ),
                 ('UI', 'BUBBLE_OPACITY', self.opacity_slider.value() / 100.0),
                 ('UI', 'BUBBLE_BORDER_COLOR', self.current_border_color),
-                ('UI', 'BUBBLE_FONT_SIZE', self.font_size_spin.value()),
+                ('UI', 'BUBBLE_SOURCE_FONT_SIZE', self.source_font_size_spin.value()),
+                ('UI', 'BUBBLE_FONT_SIZE', self.translation_font_size_spin.value()),
                 ('UI', 'BUBBLE_WIDTH_PERCENT', self.width_slider.value()),
                 ('UI', 'BUBBLE_DEFAULT_POSITION', self.bubble_position_combo.currentData()),
             ])

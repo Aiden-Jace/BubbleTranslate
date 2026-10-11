@@ -217,7 +217,7 @@ class BubbleTranslateApp(QMainWindow):
         [状态更新回调] 将 AI 处理进度显示在气泡中
         """
         if self.bubble:
-            self.bubble.set_text(msg)
+            self.bubble.set_status_text(msg)
             if not self.bubble.isVisible():
                 self.bubble.show()
 
@@ -344,7 +344,8 @@ class BubbleTranslateApp(QMainWindow):
         self.bubble.show_translation(
             status_text,
             QCursor.pos(),
-            source_text=selected_text
+            source_text=selected_text,
+            is_status=True,
         )
         self.bubble.show()
 
@@ -357,7 +358,7 @@ class BubbleTranslateApp(QMainWindow):
         self.ensure_bubble()
 
         self.current_source_text = ""
-        self.bubble.show_translation("正在初始化翻译...", QCursor.pos())
+        self.bubble.show_translation("正在初始化翻译...", QCursor.pos(), is_status=True)
         
         # 发起异步 LLM 翻译 (支持流式)
         self.llm_engine.translate_image(
@@ -380,7 +381,7 @@ class BubbleTranslateApp(QMainWindow):
         bubble.raise_()
         bubble.source_edit.setFocus()
         bubble.source_edit.clear()
-        bubble.set_translation_text("输入原文后自动翻译")
+        bubble.set_status_text("输入原文后自动翻译")
 
     def on_source_text_ready(self, source_text):
         self.current_source_text = source_text
@@ -392,7 +393,7 @@ class BubbleTranslateApp(QMainWindow):
         bubble = self.ensure_bubble()
         self.current_source_text = source_text
         bubble.set_source_text(source_text)
-        bubble.set_translation_text(status_text)
+        bubble.set_status_text(status_text)
         self.llm_engine.translate_text(
             source_text,
             callback=self.on_translation_success,
@@ -434,7 +435,7 @@ class BubbleTranslateApp(QMainWindow):
 
     def on_translation_error(self, error_msg):
         if self.bubble:
-            self.bubble.set_text(error_msg)
+            self.bubble.set_status_text(error_msg)
         print(f"错误: {error_msg}")
 
     def hide_bubble(self):

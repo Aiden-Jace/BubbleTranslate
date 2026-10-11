@@ -43,6 +43,7 @@ class TranslationBubble(QWidget):
         self._default_position = getattr(config, "BUBBLE_DEFAULT_POSITION", "top_center")
         self.source_text = ""
         self.translation_text = ""
+        self.translation_is_status = False
         self.placeholder_text = "正在翻译..."
         self.view_mode = "translation"
         self._updating_source_editor = False
@@ -227,7 +228,7 @@ class TranslationBubble(QWidget):
         accent_color = "#5169FF"
         self.container.setStyleSheet(f"""
             QFrame#container {{
-                background-color: rgba(255, 255, 255, 245);
+                background-color: #ffffff;
                 border: 2px solid {border_color};
                 border-radius: 12px;
             }}
@@ -306,12 +307,15 @@ class TranslationBubble(QWidget):
         """)
         
         # 3. 字体大小
-        font_size = getattr(config, "BUBBLE_FONT_SIZE", 11)
+        translation_font_size = config.BUBBLE_FONT_SIZE
+        source_font_size = config.BUBBLE_SOURCE_FONT_SIZE
         font_families = ["PingFang SC", "Microsoft YaHei", "Segoe UI", "Arial"]
         font = QFont()
         font.setFamilies(font_families)
-        font.setPointSize(font_size)
+        font.setPointSize(source_font_size)
         self.source_label.setFont(font)
+        self.source_edit.setFont(font)
+        font.setPointSize(translation_font_size)
         self.translation_label.setFont(font)
         
         # 4. 宽度计算 (根据屏幕百分比)
@@ -338,6 +342,12 @@ class TranslationBubble(QWidget):
 
     def set_translation_text(self, text):
         self.translation_text = text or ""
+        self.translation_is_status = False
+        self._refresh_content()
+
+    def set_status_text(self, text):
+        self.translation_text = text or ""
+        self.translation_is_status = True
         self._refresh_content()
 
     def refresh_settings(self):
@@ -577,10 +587,16 @@ class TranslationBubble(QWidget):
             return
         if (source, target) == (self.source_language, self.target_language):
             return
+        self.edit_debounce_timer.stop()
+        if not self.translation_is_status and self.translation_text.strip():
+            self.source_text, self.translation_text = self.translation_text, self.source_text
+            # 编辑框可能仍持有焦点，必须主动同步，确保重译读取的是交换后的原文。
+            self._sync_source_editor()
         self.source_language, self.target_language = source, target
         config.update_active_language(self.translation_provider, source, target)
         self._update_language_button()
         self.language_changed.emit(source, target)
+        self._refresh_content()
 
     def _create_action_button(self, text, icon_name):
         button = QPushButton(text)
@@ -823,12 +839,13 @@ class TranslationBubble(QWidget):
         y = screen.top() + 30
         self.move(x, y)
 
-    def show_translation(self, text, mouse_pos=None, source_text=None):
+    def show_translation(self, text, mouse_pos=None, source_text=None, is_status=False):
         """显示翻译，初始位置使用用户设置的默认位置。"""
         # 每次显示前重新应用样式，以防设置已更改
         self.apply_styles()
         self.source_text = source_text or ""
         self.translation_text = text or ""
+        self.translation_is_status = is_status
         self.view_mode = "translation"
         self.source_expanded = False
         self.translation_expanded = True

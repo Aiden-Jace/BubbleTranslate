@@ -22,6 +22,8 @@ class ConfigWindowTests(unittest.TestCase):
         )
         window.screenshot_hotkey_edit.setKeySequence(QKeySequence("Ctrl+F3"))
         window.text_hotkey_edit.setKeySequence(QKeySequence("Alt+Q"))
+        window.source_font_size_spin.setValue(18)
+        window.translation_font_size_spin.setValue(12)
         with (
             patch("src.ui.config_gui.config.update_configs") as update,
             patch("src.ui.config_gui.QMessageBox.information"),
@@ -35,6 +37,8 @@ class ConfigWindowTests(unittest.TestCase):
         self.assertIn(("UI", "BUBBLE_DEFAULT_POSITION", "top_left"), updates)
         self.assertIn(("System", "SCREENSHOT_HOTKEY", "Ctrl+F3"), updates)
         self.assertIn(("System", "TEXT_HOTKEY", "Alt+Q"), updates)
+        self.assertIn(("UI", "BUBBLE_SOURCE_FONT_SIZE", 18), updates)
+        self.assertIn(("UI", "BUBBLE_FONT_SIZE", 12), updates)
         self.assertIn(
             (
                 "UI",

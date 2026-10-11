@@ -9,7 +9,7 @@ from PySide6.QtGui import QMouseEvent
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
-from src.main import GlobalEventFilter
+from src.main import BubbleTranslateApp, GlobalEventFilter
 from src.ui.bubble import TranslationBubble
 
 
@@ -70,13 +70,96 @@ class TranslationBubbleTests(unittest.TestCase):
             QTest.mouseClick(bubble.language_button, Qt.RightButton)
             self.assertEqual(bubble.source_language_label.text(), "英语")
             self.assertEqual(bubble.target_language_label.text(), "中文")
+            self.assertEqual(bubble.source_text, "Hello")
+            self.assertEqual(bubble.source_edit.toPlainText(), "Hello")
+            self.assertEqual(bubble.translation_text, "你好")
             self.assertTrue(bubble.isVisible())
             save.assert_called_once_with("LLM", "英语", "中文")
             QTest.mouseClick(bubble.language_button, Qt.RightButton)
             self.assertEqual((bubble.source_language, bubble.target_language), ("中文", "英语"))
             self.assertEqual(save.call_count, 2)
+            self.assertEqual((bubble.source_text, bubble.translation_text), ("你好", "Hello"))
 
         self.assertEqual(changes, [("英语", "中文"), ("中文", "英语")])
+
+    def test_language_swap_retranslates_previous_translation_in_both_views(self):
+        for edit_mode in (False, True):
+            with self.subTest(edit_mode=edit_mode):
+                bubble = self.make_bubble()
+                if edit_mode:
+                    bubble.show_edit_view()
+                    bubble.source_edit.setFocus()
+                    bubble.source_edit.setPlainText("修改过的原文")
+                    self.assertTrue(bubble.edit_debounce_timer.isActive())
+                app = Mock()
+                app.bubble = bubble
+                app.current_source_text = "旧原文"
+                app.ensure_bubble.return_value = bubble
+                app._start_text_translation.side_effect = lambda text, status: BubbleTranslateApp._start_text_translation(app, text, status)
+                bubble.language_changed.connect(
+                    lambda source, target: BubbleTranslateApp.retranslate_for_language_change(app, source, target)
+                )
+                with patch("src.ui.bubble.config.update_active_language"):
+                    QTest.mouseClick(bubble.language_button, Qt.RightButton)
+                self.assertEqual(bubble.source_text, "Hello")
+                self.assertEqual(bubble.source_edit.toPlainText(), "Hello")
+                self.assertEqual(app.current_source_text, "Hello")
+                app.llm_engine.translate_text.assert_called_once_with(
+                    "Hello",
+                    callback=app.on_translation_success,
+                    error_callback=app.on_translation_error,
+                    stream_callback=app.on_translation_stream,
+                    source_callback=app.on_source_text_ready,
+                    target_lang="中文",
+                    source_lang="英语",
+                )
+                self.assertFalse(bubble.edit_debounce_timer.isActive())
+
+    def test_language_swap_does_not_use_status_messages_as_source(self):
+        bubble = self.make_bubble()
+        for status in ("正在翻译...", "翻译失败", ""):
+            with self.subTest(status=status):
+                bubble.set_status_text(status)
+                with patch("src.ui.bubble.config.update_active_language"):
+                    bubble.swap_languages()
+                self.assertEqual(bubble.source_text, "你好")
+                self.assertEqual(bubble.source_edit.toPlainText(), "你好")
+
+    def test_source_and_translation_font_sizes_apply_independently(self):
+        with (
+            patch("src.ui.bubble.config.BUBBLE_SOURCE_FONT_SIZE", 12),
+            patch("src.ui.bubble.config.BUBBLE_FONT_SIZE", 16),
+        ):
+            bubble = self.make_bubble()
+            bubble.show_edit_view()
+            self.assertEqual(bubble.source_label.font().pointSize(), 12)
+            self.assertEqual(bubble.source_edit.font().pointSize(), 12)
+            self.assertEqual(bubble.translation_label.font().pointSize(), 16)
+            old_source_line_height = bubble.source_edit.fontMetrics().height()
+            with patch("src.ui.bubble.config.BUBBLE_SOURCE_FONT_SIZE", 24):
+                bubble.refresh_settings()
+                self.assertEqual(bubble.source_label.font().pointSize(), 24)
+                self.assertEqual(bubble.source_edit.font().pointSize(), 24)
+                self.assertGreater(bubble.source_edit.fontMetrics().height(), old_source_line_height)
+                self.assertEqual(bubble.translation_label.font().pointSize(), 16)
+            with patch("src.ui.bubble.config.BUBBLE_FONT_SIZE", 20):
+                bubble.refresh_settings()
+                self.assertEqual(bubble.source_edit.font().pointSize(), 12)
+                self.assertEqual(bubble.translation_label.font().pointSize(), 20)
+
+    def test_full_opacity_has_an_opaque_background(self):
+        with patch("src.ui.bubble.config.BUBBLE_OPACITY", 1.0):
+            bubble = self.make_bubble()
+            self.app.processEvents()
+            self.assertEqual(bubble.windowOpacity(), 1.0)
+            background = bubble.container.grab().toImage()
+            scale = background.devicePixelRatio()
+            pixel = background.pixelColor(int(20 * scale), int((bubble.container.height() - 6) * scale))
+            self.assertEqual(pixel.alpha(), 255)
+            self.assertEqual((pixel.red(), pixel.green(), pixel.blue()), (255, 255, 255))
+        with patch("src.ui.bubble.config.BUBBLE_OPACITY", 0.5):
+            bubble.refresh_settings()
+            self.assertAlmostEqual(bubble.windowOpacity(), 0.5, delta=0.01)
 
     def test_single_right_click_keeps_bubble_open_and_double_click_closes(self):
         for target_name in (None, "translation_label", "source_edit", "copy_button"):
