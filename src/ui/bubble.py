@@ -40,6 +40,7 @@ class TranslationBubble(QWidget):
         # 用于拖拽的变量
         self._dragging = False
         self._drag_position = QPoint()
+        self._default_position = getattr(config, "BUBBLE_DEFAULT_POSITION", "top_center")
         self.source_text = ""
         self.translation_text = ""
         self.placeholder_text = "正在翻译..."
@@ -67,6 +68,8 @@ class TranslationBubble(QWidget):
         
         self.init_ui()
         self.apply_styles()
+        for widget in self.findChildren(QWidget):
+            widget.installEventFilter(self)
 
     def init_ui(self):
         # 创建一个圆角背景容器
@@ -88,12 +91,14 @@ class TranslationBubble(QWidget):
         self.language_button.setObjectName("languageButton")
         self.language_button.setCursor(Qt.PointingHandCursor)
         self.language_button.mousePressEvent = self._handle_language_button_press
+        self.language_button.mouseDoubleClickEvent = lambda event: event.accept()
         language_layout = QHBoxLayout(self.language_button)
         language_layout.setContentsMargins(0, 0, 0, 0)
         language_layout.setSpacing(5)
 
         self.source_language_label = QLabel()
         self.source_language_label.setObjectName("languageText")
+        self.source_language_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self.move_right_icon_button = QPushButton()
         self.move_right_icon_button.setObjectName("languageIconButton")
         self.move_right_icon_button.setAttribute(Qt.WA_TransparentForMouseEvents, True)
@@ -103,6 +108,7 @@ class TranslationBubble(QWidget):
         self.move_right_icon_button.setFixedSize(18, 18)
         self.target_language_label = QLabel()
         self.target_language_label.setObjectName("languageText")
+        self.target_language_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self.dropdown_icon_button = QPushButton()
         self.dropdown_icon_button.setObjectName("languageIconButton")
         self.dropdown_icon_button.setAttribute(Qt.WA_TransparentForMouseEvents, True)
@@ -341,6 +347,11 @@ class TranslationBubble(QWidget):
             self.translation_expanded = True
         self.apply_styles()
         self._refresh_content()
+        default_position = getattr(config, "BUBBLE_DEFAULT_POSITION", "top_center")
+        if default_position != self._default_position:
+            self._default_position = default_position
+            if self.isVisible():
+                self.move_to_default_position()
 
     def set_translation_provider(self, provider, refresh_ui=True):
         self.translation_provider = provider.upper()
@@ -515,7 +526,25 @@ class TranslationBubble(QWidget):
             QApplication.instance().removeEventFilter(self)
             self._language_menu_filter_installed = False
 
+    def contains_language_button(self, global_pos):
+        if not self.isVisible() or not self.language_button.isVisible():
+            return False
+        return self.language_button.rect().contains(
+            self.language_button.mapFromGlobal(global_pos)
+        )
+
     def eventFilter(self, obj, event):
+        if (
+            event.type() == QEvent.MouseButtonDblClick
+            and event.button() == Qt.RightButton
+            and isinstance(obj, QWidget)
+            and self.isAncestorOf(obj)
+            and obj is not self.language_button
+            and not self.language_button.isAncestorOf(obj)
+        ):
+            self.hide()
+            event.accept()
+            return True
         if (
             self.language_menu
             and self.language_menu.isVisible()
@@ -523,11 +552,10 @@ class TranslationBubble(QWidget):
             and hasattr(event, "globalPosition")
         ):
             global_pos = event.globalPosition().toPoint()
-            button_rect = self.language_button.rect()
-            button_top_left = self.language_button.mapToGlobal(button_rect.topLeft())
-            button_global_rect = QRect(button_top_left, button_rect.size())
-            if button_global_rect.contains(global_pos):
+            if self.contains_language_button(global_pos):
                 self.language_menu.close()
+                if event.button() == Qt.RightButton:
+                    self._handle_language_button_press(event)
                 return True
 
         return super().eventFilter(obj, event)
@@ -536,6 +564,23 @@ class TranslationBubble(QWidget):
         if event.button() == Qt.LeftButton:
             self.show_language_menu()
             event.accept()
+        elif event.button() == Qt.RightButton:
+            self.swap_languages()
+            event.accept()
+
+    def swap_languages(self):
+        if self.language_menu:
+            self.language_menu.close()
+        source, target = self.target_language, self.source_language
+        # 自动检测不能作为目标语言，也不能保存引擎不支持的语言组合。
+        if source not in self.source_languages or target not in self.target_languages:
+            return
+        if (source, target) == (self.source_language, self.target_language):
+            return
+        self.source_language, self.target_language = source, target
+        config.update_active_language(self.translation_provider, source, target)
+        self._update_language_button()
+        self.language_changed.emit(source, target)
 
     def _create_action_button(self, text, icon_name):
         button = QPushButton(text)
@@ -602,6 +647,10 @@ class TranslationBubble(QWidget):
     def _update_language_button(self):
         self.source_language_label.setText(self.source_language)
         self.target_language_label.setText(self.target_language)
+        if self.source_language == "自动检测":
+            self.language_button.setToolTip("左键选择语言；先选择具体原文语言，再右键交换原文与译文语言")
+        else:
+            self.language_button.setToolTip("左键选择语言；右键交换原文与译文语言")
 
     def _refresh_content(self):
         has_source = bool(self.source_text.strip())
@@ -656,7 +705,7 @@ class TranslationBubble(QWidget):
 
         toolbar_height = (
             self.toolbar.sizeHint().height()
-            if self.toolbar.isVisible()
+            if not self.toolbar.isHidden()
             else 0
         )
         container_extra = 10
@@ -678,10 +727,10 @@ class TranslationBubble(QWidget):
             self.translation_title,
             self.translation_label,
         ):
-            if widget.isVisible():
+            if not widget.isHidden():
                 widget.setFixedWidth(content_width)
 
-        if self.source_edit.isVisible():
+        if not self.source_edit.isHidden():
             self.source_edit.document().setTextWidth(max(1, content_width - 18))
             self.source_edit.setFixedHeight(self._plain_text_edit_height(self.source_edit, content_width))
 
@@ -697,7 +746,7 @@ class TranslationBubble(QWidget):
                 self.translation_title,
                 self.translation_label,
             )
-            if widget.isVisible()
+            if not widget.isHidden()
         ]
         return self._calculate_layout_height(visible_widgets, self.content_layout, content_width)
 
@@ -742,34 +791,40 @@ class TranslationBubble(QWidget):
         min_visible_h = int(self.height() * 0.1)
         
         # 1. 检查右边界：左侧坐标不能超过 (屏幕宽 - 最小保留宽)
-        if pos.x() > screen.width() - min_visible_w:
-            new_x = screen.width() - min_visible_w
+        if pos.x() > screen.left() + screen.width() - min_visible_w:
+            new_x = screen.left() + screen.width() - min_visible_w
             
         # 2. 检查左边界：右侧坐标 (pos.x + width) 不能小于 最小保留宽
-        if pos.x() + self.width() < min_visible_w:
-            new_x = min_visible_w - self.width()
+        if pos.x() + self.width() < screen.left() + min_visible_w:
+            new_x = screen.left() + min_visible_w - self.width()
             
         # 3. 检查下边界：上方坐标不能超过 (屏幕高 - 最小保留高)
-        if pos.y() > screen.height() - min_visible_h:
-            new_y = screen.height() - min_visible_h
+        if pos.y() > screen.top() + screen.height() - min_visible_h:
+            new_y = screen.top() + screen.height() - min_visible_h
             
         # 4. 检查上边界：下方坐标 (pos.y + height) 不能小于 最小保留高
-        if pos.y() + self.height() < min_visible_h:
-            new_y = min_visible_h - self.height()
+        if pos.y() + self.height() < screen.top() + min_visible_h:
+            new_y = screen.top() + min_visible_h - self.height()
         
         if new_x != pos.x() or new_y != pos.y():
             self.move(new_x, new_y)
 
-    def move_to_top_right(self):
-        """将气泡移动到屏幕右上角"""
+    def move_to_default_position(self):
+        """将气泡移动到配置指定的屏幕顶部位置。"""
         screen = QApplication.primaryScreen().availableGeometry()
-        # 位于右上角，动态计算 X 坐标防止超出
-        x = screen.width() - self.width() - 30
-        y = 30
+        position = getattr(config, "BUBBLE_DEFAULT_POSITION", "top_center")
+        margin = min(30, max(0, (screen.width() - self.width()) // 2))
+        if position == "top_left":
+            x = screen.left() + margin
+        elif position == "top_right":
+            x = screen.left() + screen.width() - self.width() - margin
+        else:
+            x = screen.left() + max(0, (screen.width() - self.width()) // 2)
+        y = screen.top() + 30
         self.move(x, y)
 
     def show_translation(self, text, mouse_pos=None, source_text=None):
-        """显示翻译，初始位置固定在右上角"""
+        """显示翻译，初始位置使用用户设置的默认位置。"""
         # 每次显示前重新应用样式，以防设置已更改
         self.apply_styles()
         self.source_text = source_text or ""
@@ -780,7 +835,7 @@ class TranslationBubble(QWidget):
         self._sync_source_editor()
         self._refresh_content()
         if not self.isVisible():
-            self.move_to_top_right()
+            self.move_to_default_position()
         else:
             # 如果已显示，确保位置在屏幕内
             self._ensure_within_screen()
@@ -795,12 +850,18 @@ class TranslationBubble(QWidget):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.RightButton:
-            self.hide()
             event.accept()
         elif event.button() == Qt.LeftButton:
             self._dragging = True
             self._drag_position = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
             event.accept()
+
+    def mouseDoubleClickEvent(self, event):
+        if event.button() == Qt.RightButton:
+            self.hide()
+            event.accept()
+        else:
+            super().mouseDoubleClickEvent(event)
 
     def mouseMoveEvent(self, event):
         if self._dragging and event.buttons() & Qt.LeftButton:

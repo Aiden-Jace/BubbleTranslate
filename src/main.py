@@ -8,7 +8,7 @@ project_root = os.path.dirname(current_dir)
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from PySide6.QtWidgets import QApplication, QMainWindow, QSystemTrayIcon, QMenu, QStyle
+from PySide6.QtWidgets import QApplication, QMainWindow, QSystemTrayIcon, QMenu, QStyle, QWidget
 from PySide6.QtCore import Qt, QObject, QEvent, QTimer
 from PySide6.QtGui import QPixmap, QImage, QAction, QCursor
 
@@ -25,18 +25,37 @@ from src.resources import resource_path
 
 class GlobalEventFilter(QObject):
     """
-    全局事件过滤器：捕获所有窗口的右键事件，确保在任何情况下都能退出截屏模式
+    全局事件过滤器：双击右键关闭气泡或退出截屏模式。
     """
     def __init__(self, app_instance):
         super().__init__()
         self.app = app_instance
-        self._right_click_active = False
+        self._right_double_click_active = False
 
     def eventFilter(self, obj, event):
         # 仅当截图层显示时工作
         if self.app.overlay and self.app.overlay.isVisible():
-            # 捕获鼠标按下和释放
-            if event.type() in (QEvent.MouseButtonPress, QEvent.MouseButtonRelease):
+            # 气泡语言区域自行处理右键交换，不触发截图模式的关闭动作。
+            bubble = self.app.bubble
+            # 原生窗口先收到鼠标事件，此时 obj 是 QWindow，需按全局位置识别。
+            if (
+                bubble
+                and event.type() in (QEvent.MouseButtonPress, QEvent.MouseButtonRelease, QEvent.MouseButtonDblClick)
+                and event.button() == Qt.RightButton
+                and hasattr(event, "globalPosition")
+                and bubble.contains_language_button(event.globalPosition().toPoint())
+            ):
+                self._right_double_click_active = False
+                if event.type() == QEvent.MouseButtonPress:
+                    bubble._handle_language_button_press(event)
+                event.accept()
+                return True
+            if bubble and isinstance(obj, QWidget):
+                button = bubble.language_button
+                if obj is button or button.isAncestorOf(obj):
+                    return False
+            # 单击右键仅消耗事件，双击后的释放才执行关闭。
+            if event.type() in (QEvent.MouseButtonPress, QEvent.MouseButtonRelease, QEvent.MouseButtonDblClick):
                 is_right_click = event.button() == Qt.RightButton
                 
                 # macOS 特有优化：识别 Control + 左键为右键行为
@@ -46,12 +65,10 @@ class GlobalEventFilter(QObject):
                         print("[GlobalFilter] 检测到 Control + 左键 (macOS 右键模拟)")
 
                 if is_right_click:
-                    if event.type() == QEvent.MouseButtonPress:
-                        self._right_click_active = True
-                        print("[GlobalFilter] 已拦截右键按下")
-                    elif self._right_click_active:
-                        self._right_click_active = False
-                        print("[GlobalFilter] 已拦截右键释放并执行退出")
+                    if event.type() == QEvent.MouseButtonDblClick:
+                        self._right_double_click_active = True
+                    elif event.type() == QEvent.MouseButtonRelease and self._right_double_click_active:
+                        self._right_double_click_active = False
                         self.app.handle_right_click()
                     return True
 
@@ -60,6 +77,8 @@ class GlobalEventFilter(QObject):
                 print("[GlobalFilter] 已拦截上下文菜单事件")
                 return True
                 
+        else:
+            self._right_double_click_active = False
         return super().eventFilter(obj, event)
 
 class BubbleTranslateApp(QMainWindow):
@@ -114,7 +133,7 @@ class BubbleTranslateApp(QMainWindow):
             }
             print(f"翻译模式: {provider_names.get(config.TRANSLATION_MODE, config.TRANSLATION_MODE)}")
         print(f"目标语言: {config.DEFAULT_TARGET_LANGUAGE}")
-        print("操作: Alt + Z 开启截图, Ctrl + Q 划词翻译, 左键拖拽翻译, 右键退出")
+        print("操作: Alt + Z 开启截图, Ctrl + Q 划词翻译, 左键拖拽翻译, 双击右键退出")
 
     def init_tray(self):
         self.tray_icon = QSystemTrayIcon(self)
@@ -188,23 +207,15 @@ class BubbleTranslateApp(QMainWindow):
                 self.bubble.show()
 
     def handle_right_click(self):
-        """
-        统一处理右键逻辑：
-        1. 如果气泡正在显示，优先关闭气泡并清理状态
-        2. 如果气泡未显示，则直接退出截屏模式
-        """
-        bubble_visible = self.bubble.isVisible() if self.bubble else False
-        print(f"[App] handle_right_click: bubble_visible={bubble_visible}")
-        
-        if bubble_visible:
-            print("[App] 右键动作：发现气泡，执行关闭清理")
-            self.hide_bubble()
-            if self.overlay:
-                self.overlay.persisted_rect = None
-                self.overlay.update()
-        else:
-            print("[App] 右键动作：无气泡，直接退出截屏模式")
-            self.exit_capture_mode()
+        """双击右键一次关闭气泡并退出截屏模式。"""
+        self.exit_capture_mode()
+
+    def reset_capture_selection(self):
+        """重新框选时清理上次结果，继续保留截屏模式。"""
+        self.hide_bubble()
+        if self.overlay:
+            self.overlay.persisted_rect = None
+            self.overlay.update()
 
     def start_capture_mode(self):
         # 如果已经显示了，直接返回
@@ -250,7 +261,7 @@ class BubbleTranslateApp(QMainWindow):
         self.overlay = CaptureOverlay()
         self.overlay.area_selected.connect(self.request_llm_translation)
         self.overlay.exit_requested.connect(self.exit_capture_mode)
-        self.overlay.reset_requested.connect(self.handle_right_click)
+        self.overlay.reset_requested.connect(self.reset_capture_selection)
         
         self.overlay.set_data(pixmap, self.dpi_ratio)
         self.overlay.show_full_screen()

@@ -149,6 +149,16 @@ class ConfigWindow(QWidget):
             getattr(config, "BUBBLE_MENU_ENABLED", True)
         )
         style_layout.addRow("菜单显示:", self.bubble_menu_check)
+
+        self.bubble_position_combo = QComboBox()
+        self.bubble_position_combo.addItem("右上角", "top_right")
+        self.bubble_position_combo.addItem("左上角", "top_left")
+        self.bubble_position_combo.addItem("顶部居中", "top_center")
+        position_index = self.bubble_position_combo.findData(
+            getattr(config, "BUBBLE_DEFAULT_POSITION", "top_center")
+        )
+        self.bubble_position_combo.setCurrentIndex(position_index if position_index >= 0 else 2)
+        style_layout.addRow("默认显示位置:", self.bubble_position_combo)
         
         opacity_container = QHBoxLayout()
         self.opacity_slider = QSlider(Qt.Horizontal)
@@ -510,6 +520,7 @@ class ConfigWindow(QWidget):
                 ('UI', 'BUBBLE_BORDER_COLOR', self.current_border_color),
                 ('UI', 'BUBBLE_FONT_SIZE', self.font_size_spin.value()),
                 ('UI', 'BUBBLE_WIDTH_PERCENT', self.width_slider.value()),
+                ('UI', 'BUBBLE_DEFAULT_POSITION', self.bubble_position_combo.currentData()),
             ])
             config.update_configs(updates)
 

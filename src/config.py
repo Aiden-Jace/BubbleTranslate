@@ -74,6 +74,7 @@ defaults = {
     },
     'UI': {
         'BUBBLE_MENU_ENABLED': "True",
+        'BUBBLE_DEFAULT_POSITION': "top_center",
         'BUBBLE_OPACITY': "0.9",
         'BUBBLE_BORDER_COLOR': "#ffffff",
         'BUBBLE_FONT_SIZE': "10",
@@ -153,6 +154,7 @@ BUBBLE_OPACITY = _parser.getfloat('UI', 'BUBBLE_OPACITY')
 BUBBLE_BORDER_COLOR = _parser.get('UI', 'BUBBLE_BORDER_COLOR')
 BUBBLE_FONT_SIZE = _parser.getint('UI', 'BUBBLE_FONT_SIZE')
 BUBBLE_WIDTH_PERCENT = _parser.getint('UI', 'BUBBLE_WIDTH_PERCENT')
+BUBBLE_DEFAULT_POSITION = _parser.get('UI', 'BUBBLE_DEFAULT_POSITION', fallback='top_center')
 STREAM_OUTPUT = _parser.getboolean('UI', 'STREAM_OUTPUT')
 
 AUTO_START = _parser.getboolean('System', 'AUTO_START')
@@ -240,6 +242,7 @@ _ini_to_global_map = {
     'TARGET_LANGUAGE': 'DEFAULT_TARGET_LANGUAGE',
     'DEEPL_API_KEY': 'DEEPL_API_KEY',
     'BUBBLE_MENU_ENABLED': 'BUBBLE_MENU_ENABLED',
+    'BUBBLE_DEFAULT_POSITION': 'BUBBLE_DEFAULT_POSITION',
     'BUBBLE_OPACITY': 'BUBBLE_OPACITY',
     'BUBBLE_BORDER_COLOR': 'BUBBLE_BORDER_COLOR',
     'BUBBLE_FONT_SIZE': 'BUBBLE_FONT_SIZE',

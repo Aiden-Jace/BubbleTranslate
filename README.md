@@ -39,8 +39,9 @@ A lightweight and configurable desktop translator for screenshots and selected t
 | VLM 识别 | 支持视觉语言模型识别截图后翻译 |
 | 多翻译引擎 | LLM、DeepL、百度、有道、Google 免费翻译 |
 | 独立 API | OCR 与翻译模型可配置不同地址、密钥和模型 |
-| 智能气泡 | 自适应高度、原文编辑、复制、语言切换 |
+| 智能气泡 | 自适应高度、原文编辑、复制；左键选择语言，右键交换原文与目标语言（需选定具体原文语言） |
 | 精简模式 | 可隐藏顶部气泡菜单，只显示译文 |
+| 气泡默认位置 | 右上角、左上角、顶部居中可选，默认顶部居中 |
 | 独立语言偏好 | 每种翻译引擎分别保存原文和目标语言 |
 
 ### 工作方式
@@ -126,7 +127,7 @@ python -m src.main
 | --- | --- | --- |
 | 截图翻译 | `Alt + Z` | `Control + Option + Z` |
 | 划词/手动翻译 | `Ctrl + Q` | `Control + Q` |
-| 退出截图模式 | 右键或 `Esc` | 右键或 `Esc` |
+| 退出截图模式 | 双击右键或 `Esc` | 双击右键或 `Esc` |
 
 ### 配置
 
@@ -238,9 +239,10 @@ It supports local or remote OpenAI-compatible models as well as DeepL, Baidu Tra
 | VLM pipeline | Recognize screenshots with a vision-language model |
 | Multiple providers | LLM, DeepL, Baidu, Youdao, and Google |
 | Separate APIs | Independent OCR and translation endpoints and credentials |
-| Smart bubble | Adaptive height, editable source, copy, and language selection |
+| Smart bubble | Adaptive height, editable source, copy; left-click to select languages, right-click to swap them (requires a specific source language) |
 | Minimal mode | Hide the toolbar and display translation only |
 | Provider preferences | Independent source and target languages per provider |
+| Default bubble position | Choose top right, top left, or top center; defaults to top center |
 
 ### Translation Providers
 
@@ -288,7 +290,7 @@ source venv/bin/activate
 | --- | --- | --- |
 | Screenshot translation | `Alt + Z` | `Control + Option + Z` |
 | Selected text / manual input | `Ctrl + Q` | `Control + Q` |
-| Exit capture mode | Right-click or `Esc` | Right-click or `Esc` |
+| Exit capture mode | Double right-click or `Esc` | Double right-click or `Esc` |
 
 ### Configuration
 

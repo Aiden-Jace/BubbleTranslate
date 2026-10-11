@@ -16,6 +16,9 @@ class ConfigWindowTests(unittest.TestCase):
 
     def test_save_batches_configuration_writes(self):
         window = ConfigWindow()
+        window.bubble_position_combo.setCurrentIndex(
+            window.bubble_position_combo.findData("top_left")
+        )
         with (
             patch("src.ui.config_gui.config.update_configs") as update,
             patch("src.ui.config_gui.QMessageBox.information"),
@@ -26,6 +29,7 @@ class ConfigWindowTests(unittest.TestCase):
         update.assert_called_once()
         updates = update.call_args.args[0]
         self.assertGreater(len(updates), 20)
+        self.assertIn(("UI", "BUBBLE_DEFAULT_POSITION", "top_left"), updates)
         self.assertIn(
             (
                 "UI",
@@ -42,6 +46,22 @@ class ConfigWindowTests(unittest.TestCase):
             ),
             updates,
         )
+
+    def test_bubble_position_options_and_saved_selection(self):
+        for position in ("top_center", "top_left", "top_right", "invalid"):
+            with self.subTest(position=position):
+                with patch("src.ui.config_gui.config.BUBBLE_DEFAULT_POSITION", position):
+                    window = ConfigWindow()
+                self.assertEqual(
+                    [window.bubble_position_combo.itemText(i) for i in range(3)],
+                    ["右上角", "左上角", "顶部居中"],
+                )
+                self.assertEqual(
+                    window.bubble_position_combo.currentData(),
+                    "top_center" if position == "invalid" else position,
+                )
+                window.close()
+                window.deleteLater()
 
 
 if __name__ == "__main__":

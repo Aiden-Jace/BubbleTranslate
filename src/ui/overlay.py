@@ -76,7 +76,7 @@ class CaptureOverlay(QWidget):
         font.setPointSize(11)
         font.setBold(True)
         painter.setFont(font)
-        painter.drawText(self.rect().adjusted(25, 25, -25, -25), Qt.AlignLeft | Qt.AlignTop, "左键框选翻译，右键或 Esc 退出翻译")
+        painter.drawText(self.rect().adjusted(25, 25, -25, -25), Qt.AlignLeft | Qt.AlignTop, "左键框选翻译，双击右键或 Esc 退出翻译")
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:

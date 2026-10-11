@@ -23,7 +23,7 @@ class MouseEventStub:
 
 
 class GlobalEventFilterTests(unittest.TestCase):
-    def test_right_click_is_consumed_until_release(self):
+    def test_single_right_click_is_consumed_without_closing(self):
         app = Mock()
         app.overlay.isVisible.return_value = True
         event_filter = GlobalEventFilter(app)
@@ -41,6 +41,17 @@ class GlobalEventFilterTests(unittest.TestCase):
 
         self.assertTrue(press_consumed)
         self.assertTrue(release_consumed)
+        app.handle_right_click.assert_not_called()
+
+    def test_right_double_click_closes_once_on_release(self):
+        app = Mock()
+        app.overlay.isVisible.return_value = True
+        event_filter = GlobalEventFilter(app)
+        for event_type in (QEvent.MouseButtonPress, QEvent.MouseButtonRelease, QEvent.MouseButtonDblClick):
+            self.assertTrue(event_filter.eventFilter(None, MouseEventStub(event_type)))
+            app.handle_right_click.assert_not_called()
+        self.assertTrue(event_filter.eventFilter(None, MouseEventStub(QEvent.MouseButtonRelease)))
+        self.assertTrue(event_filter.eventFilter(None, MouseEventStub(QEvent.MouseButtonRelease)))
         app.handle_right_click.assert_called_once_with()
 
     def test_context_menu_event_is_consumed_without_second_exit(self):
@@ -55,6 +66,46 @@ class GlobalEventFilterTests(unittest.TestCase):
 
         self.assertTrue(consumed)
         app.handle_right_click.assert_not_called()
+
+
+class CaptureExitTests(unittest.TestCase):
+    def test_one_right_double_click_exits_with_or_without_visible_bubble(self):
+        for bubble_visible in (True, False):
+            with self.subTest(bubble_visible=bubble_visible):
+                app = Mock()
+                overlay = app.overlay
+                overlay.isVisible.return_value = True
+                app.bubble.isVisible.return_value = bubble_visible
+                app.handle_right_click.side_effect = lambda: BubbleTranslateApp.handle_right_click(app)
+                app.exit_capture_mode.side_effect = lambda: BubbleTranslateApp.exit_capture_mode(app)
+                event_filter = GlobalEventFilter(app)
+
+                for event_type in (
+                    QEvent.MouseButtonPress,
+                    QEvent.MouseButtonRelease,
+                    QEvent.MouseButtonDblClick,
+                    QEvent.MouseButtonRelease,
+                ):
+                    self.assertTrue(event_filter.eventFilter(None, MouseEventStub(event_type)))
+
+                app.exit_capture_mode.assert_called_once_with()
+                overlay.exit_mode.assert_called_once_with()
+                overlay.close.assert_called_once_with()
+                overlay.deleteLater.assert_called_once_with()
+                self.assertIsNone(app.overlay)
+                app.hide_bubble.assert_called_once_with()
+
+    def test_new_selection_clears_previous_result_without_exiting(self):
+        app = Mock()
+        overlay = app.overlay
+        BubbleTranslateApp.reset_capture_selection(app)
+
+        app.hide_bubble.assert_called_once_with()
+        self.assertIsNone(overlay.persisted_rect)
+        overlay.update.assert_called_once_with()
+        overlay.exit_mode.assert_not_called()
+        app.exit_capture_mode.assert_not_called()
+        self.assertIs(app.overlay, overlay)
 
 
 class ButtonStub:
