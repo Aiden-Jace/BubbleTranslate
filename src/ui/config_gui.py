@@ -96,10 +96,12 @@ class ConfigWindow(QWidget):
         core_layout.addRow("翻译主引擎:", self.mode_combo)
 
         self.strategy_combo = QComboBox()
-        self.strategy_combo.addItem("OCR 识别后翻译 (推荐)", "OCR_LLM")
+        self.strategy_combo.addItem("本地 CPU OCR（无需显卡或 OCR API）", "LOCAL_CPU")
+        self.strategy_combo.addItem("OCR API 识别后翻译", "OCR_LLM")
         self.strategy_combo.addItem("VLM 识别后翻译", "VLM")
-        strategy_index = 0 if config.SCREENSHOT_STRATEGY == "OCR_LLM" else 1
-        self.strategy_combo.setCurrentIndex(strategy_index)
+        strategy_index = self.strategy_combo.findData(config.SCREENSHOT_STRATEGY)
+        self.strategy_combo.setCurrentIndex(strategy_index if strategy_index >= 0 else 0)
+        self.strategy_combo.setToolTip("本地 CPU OCR 首次使用可能需要下载模型，之后识别无需联网。可搭配 Google 免费翻译。")
         core_layout.addRow("截图翻译策略:", self.strategy_combo)
 
         self.language_preferences = {}
@@ -449,6 +451,8 @@ class ConfigWindow(QWidget):
         self.mode_combo.blockSignals(False)
         self._current_language_provider = self.mode_combo.currentData()
         self._load_language_options(self._current_language_provider)
+        strategy_index = self.strategy_combo.findData(config.SCREENSHOT_STRATEGY)
+        self.strategy_combo.setCurrentIndex(strategy_index if strategy_index >= 0 else 0)
 
     def fetch_models(self, target_combo, target_btn, base_url_edit, api_key_edit):
         """

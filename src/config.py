@@ -43,7 +43,7 @@ defaults = {
     },
     'Translation': {
         'MODE': "DEEPL",
-        'STRATEGY': "VLM",
+        'STRATEGY': "LOCAL_CPU",
         'TARGET_LANGUAGE': "中文"
     },
     'LanguagePreferences': {

@@ -7,6 +7,7 @@
 - `src/resources.py`：开发环境与 PyInstaller 环境的统一资源寻址。
 - `src/core/openai_client.py`：OpenAI 兼容接口、普通响应和 SSE 流式解析。
 - `src/core/llm_engine.py`：后台工作线程及文本、OCR、VLM 流程编排。
+- `src/core/local_ocr.py`：本地 CPU OCR，懒加载 RapidOCR + PP-OCRv6 small，串行复用 ONNX Runtime CPU 会话。
 - `src/core/translation_services.py`：DeepL、百度、有道和 Google 翻译适配。
 - `src/core/listener.py`：Windows/macOS 全局快捷键监听。
 - `src/core/selection_capture.py`：异步选中文本读取与剪贴板恢复。
@@ -27,14 +28,16 @@
 
 ### 截图翻译
 
-1. 截取选区并编码为 PNG。
-2. `OCR_LLM` 使用独立 OCR API 识别；`VLM` 使用翻译模型 API 识别。
+1. 截取选区；远程识别时编码为 PNG Base64，本地识别直接使用图像。
+2. `LOCAL_CPU` 使用本地 PP-OCRv6 small；`OCR_LLM` 使用独立 OCR API；`VLM` 使用翻译模型 API 识别。
 3. 识别出的原文交给当前翻译引擎。
 4. 气泡展示译文，编辑模式可查看和修改原文。
 
 ## 配置原则
 
 - OCR API 与翻译模型 API 完全独立。
+- 本地 OCR 不读取模型 API 配置，首次下载后可离线识别；模型缓存保存在配置目录下的 `models/cpu_ocr/`，避免写入程序安装目录。
+- 新配置默认截图策略为 `LOCAL_CPU`；已有配置不自动切换。
 - 每种翻译引擎单独保存原文语言和目标语言。
 - 设置窗口使用批量更新，一次保存仅写入配置文件一次。
 - 源码默认配置不包含真实密钥；密钥只保存在本地 `config.ini`。
@@ -45,6 +48,7 @@
 
 - OpenAI 普通与流式响应解析。
 - OCR API 和翻译 API 路由。
+- 本地 CPU OCR 路由、会话复用、输入图像保护及取消/异常处理。
 - 图片编码不修改输入对象。
 - 百度签名和 Google 响应解析。
 - 按引擎独立语言列表。

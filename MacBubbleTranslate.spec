@@ -1,6 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 block_cipher = None
+from PyInstaller.utils.hooks import collect_data_files
 
 a = Analysis(
     ['src/main.py'],
@@ -9,7 +10,7 @@ a = Analysis(
     datas=[
         ('icon.ico', '.'),
         ('assets', 'assets'),
-    ],
+    ] + collect_data_files('rapidocr'),
     hiddenimports=[
         'pynput.keyboard._darwin',
         'pynput.mouse._darwin',

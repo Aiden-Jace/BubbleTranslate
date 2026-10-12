@@ -24,6 +24,7 @@ class ConfigWindowTests(unittest.TestCase):
         window.text_hotkey_edit.setKeySequence(QKeySequence("Alt+Q"))
         window.source_font_size_spin.setValue(18)
         window.translation_font_size_spin.setValue(12)
+        window.strategy_combo.setCurrentIndex(window.strategy_combo.findData("LOCAL_CPU"))
         with (
             patch("src.ui.config_gui.config.update_configs") as update,
             patch("src.ui.config_gui.QMessageBox.information"),
@@ -39,6 +40,7 @@ class ConfigWindowTests(unittest.TestCase):
         self.assertIn(("System", "TEXT_HOTKEY", "Alt+Q"), updates)
         self.assertIn(("UI", "BUBBLE_SOURCE_FONT_SIZE", 18), updates)
         self.assertIn(("UI", "BUBBLE_FONT_SIZE", 12), updates)
+        self.assertIn(("Translation", "STRATEGY", "LOCAL_CPU"), updates)
         self.assertIn(
             (
                 "UI",
@@ -86,6 +88,17 @@ class ConfigWindowTests(unittest.TestCase):
                 update.assert_not_called()
                 warning.assert_called_once()
         window.deleteLater()
+
+    def test_screenshot_strategy_loads_cpu_and_existing_api_options(self):
+        for strategy in ("LOCAL_CPU", "OCR_LLM", "VLM"):
+            with self.subTest(strategy=strategy):
+                with patch("src.ui.config_gui.config.SCREENSHOT_STRATEGY", strategy):
+                    window = ConfigWindow()
+                    self.assertEqual(window.strategy_combo.currentData(), strategy)
+                    window.strategy_combo.setCurrentIndex((window.strategy_combo.currentIndex() + 1) % 3)
+                    window.refresh_language_settings()
+                    self.assertEqual(window.strategy_combo.currentData(), strategy)
+                window.deleteLater()
 
     def test_hotkey_settings_reload_and_reset_to_f1_f2(self):
         window = ConfigWindow()

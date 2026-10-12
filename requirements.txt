@@ -3,3 +3,5 @@ mss>=9,<11
 requests>=2.31,<3
 Pillow>=10,<13
 pynput>=1.7,<2
+rapidocr>=3.10,<4
+onnxruntime>=1.20,<2

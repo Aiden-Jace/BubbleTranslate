@@ -35,6 +35,7 @@ A lightweight and configurable desktop translator for screenshots and selected t
 | 自动划词提示 | 拖选文本后在选区旁显示翻译按钮 |
 | 划词翻译 | 使用 `F2` 翻译当前选中的文本 |
 | 手动翻译 | 未检测到选中文本时自动打开编辑气泡 |
+| 本地 CPU OCR | 使用 RapidOCR + PP-OCRv6 small 提取截图文字，无需显卡、大模型或 OCR API |
 | 双阶段识别 | 支持专用 OCR 识别后翻译 |
 | VLM 识别 | 支持视觉语言模型识别截图后翻译 |
 | 多翻译引擎 | LLM、DeepL、百度、有道、Google 免费翻译 |
@@ -54,7 +55,7 @@ F1
    ↓
 框选屏幕区域
    ↓
-OCR 专用模型 / VLM 识别原文
+本地 CPU OCR / OCR API / VLM 识别原文
    ↓
 当前翻译引擎生成译文
    ↓
@@ -134,9 +135,10 @@ python -m src.main
 
 ### 配置
 
-设置窗口分为四个页面：
+设置窗口包含以下页面：
 
 - **设置**：翻译引擎、截图策略、语言、自动划词提示、开机启动。
+- **快捷键**：截屏翻译和划词翻译快捷键。
 - **气泡**：顶部菜单、透明度、边框颜色、字体大小、气泡宽度。
 - **模型**：翻译模型与 OCR 模型。
 - **API**：LLM、OCR、DeepL、百度和有道服务配置。
@@ -147,6 +149,16 @@ python -m src.main
 - macOS：应用用户数据目录
 
 `config.ini` 已加入 `.gitignore`，请勿提交真实密钥。
+
+#### 本地 CPU OCR
+
+1. 安装 `requirements.txt` 中的依赖。
+2. 在 **设置 → 截图翻译策略** 中选择 **本地 CPU OCR（无需显卡或 OCR API）**。
+3. 将翻译主引擎选为 **Google 免费翻译**，即可无需配置 OCR 或大模型 API 使用截图翻译。
+
+本地识别采用 PP-OCRv6 small 的文字检测和识别模型，支持简繁中文、英文、日文及其他受支持语言。首次识别会联网下载模型，气泡会显示准备提示；成功缓存后，后续 OCR 可以离线运行。Google 翻译仍需联网。新配置默认采用本地 CPU OCR，已有配置保留原来的截图策略。
+
+模型缓存位于配置目录下的 `models/cpu_ocr/`：源码运行时为项目目录，打包版本为用户配置目录。模型文件不进入 Git。首次准备会较慢，模型在当前进程内复用；若下载失败，检查网络后可重试。此模式无需填写 OCR API 地址、密钥或模型名。
 
 ### 测试
 
@@ -237,6 +249,7 @@ It supports local or remote OpenAI-compatible models as well as DeepL, Baidu Tra
 | Screenshot translation | Press `F1` and select any screen region |
 | Automatic selection tip | Shows a translate button next to dragged text |
 | Selected-text translation | Press `F2` to translate selected text |
+| Local CPU OCR | Extract screenshot text using RapidOCR and PP-OCRv6 small without a GPU, large language model, or OCR API |
 | Manual input | Opens the editor when no selected text is detected |
 | OCR pipeline | Recognize text with a dedicated OCR model before translation |
 | VLM pipeline | Recognize screenshots with a vision-language model |

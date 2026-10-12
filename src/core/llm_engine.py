@@ -5,7 +5,7 @@ from PIL import Image
 from PySide6.QtCore import QThread, Signal
 
 from src import config
-from src.core import openai_client, translation_services
+from src.core import local_ocr, openai_client, translation_services
 
 
 def pil_to_base64(pil_image):
@@ -143,11 +143,21 @@ class LLMVisionWorker(TranslationWorkerBase):
             if self._is_cancelled():
                 return
 
-            image_base64 = pil_to_base64(self.pil_img)
-            if config.SCREENSHOT_STRATEGY == "VLM":
-                source_text = self._recognize_with_vlm(image_base64)
+            if config.SCREENSHOT_STRATEGY == "LOCAL_CPU":
+                source_text = local_ocr.recognize_text(
+                    self.pil_img,
+                    status_callback=self.status_msg.emit,
+                    is_cancelled=self._is_cancelled,
+                )
+                if not self._is_cancelled() and not source_text.strip():
+                    self.error_occurred.emit("图片中似乎没有可识别的文字")
+                    return
             else:
-                source_text = self._recognize_with_ocr(image_base64)
+                image_base64 = pil_to_base64(self.pil_img)
+                if config.SCREENSHOT_STRATEGY == "VLM":
+                    source_text = self._recognize_with_vlm(image_base64)
+                else:
+                    source_text = self._recognize_with_ocr(image_base64)
 
             if self._is_cancelled() or not source_text:
                 return

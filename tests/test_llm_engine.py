@@ -76,6 +76,61 @@ class LLMEngineTests(unittest.TestCase):
             ],
         )
 
+    def test_local_cpu_strategy_uses_google_without_model_api_or_image_encoding(self):
+        image = Image.new("RGB", (20, 20), "white")
+        worker = LLMVisionWorker(image, source_lang="英语", target_lang="中文")
+        sources, results = [], []
+        worker.source_ready.connect(sources.append)
+        worker.result_ready.connect(results.append)
+        with (
+            patch.object(config, "SCREENSHOT_STRATEGY", "LOCAL_CPU"),
+            patch.object(config, "TRANSLATION_MODE", "GOOGLE"),
+            patch("src.core.llm_engine.local_ocr.recognize_text", return_value="hello") as recognize,
+            patch("src.core.llm_engine.translation_services.translate", return_value="你好") as translate,
+            patch("src.core.llm_engine.openai_client.request_chat_completion") as remote,
+            patch("src.core.llm_engine.pil_to_base64") as encode,
+        ):
+            worker.run()
+        self.assertIs(recognize.call_args.args[0], image)
+        translate.assert_called_once_with("hello", source_lang="英语", target_lang="中文")
+        remote.assert_not_called()
+        encode.assert_not_called()
+        self.assertEqual(sources, ["hello"])
+        self.assertEqual(results, ["你好"])
+
+    def test_local_cpu_empty_or_failed_ocr_does_not_translate(self):
+        for result in ("", RuntimeError("CPU OCR model unavailable")):
+            with self.subTest(result=result):
+                worker = LLMVisionWorker(Image.new("RGB", (20, 20)))
+                errors = []
+                worker.error_occurred.connect(errors.append)
+                with (
+                    patch.object(config, "SCREENSHOT_STRATEGY", "LOCAL_CPU"),
+                    patch("src.core.llm_engine.local_ocr.recognize_text", side_effect=result if isinstance(result, Exception) else None, return_value=""),
+                    patch.object(worker, "_translate_text") as translate,
+                ):
+                    worker.run()
+                translate.assert_not_called()
+                self.assertEqual(len(errors), 1)
+
+    def test_local_cpu_cancelled_ocr_does_not_emit_source_or_translate(self):
+        worker = LLMVisionWorker(Image.new("RGB", (20, 20)))
+        sources = []
+        worker.source_ready.connect(sources.append)
+
+        def recognize(*args, **kwargs):
+            worker.stop()
+            return "stale text"
+
+        with (
+            patch.object(config, "SCREENSHOT_STRATEGY", "LOCAL_CPU"),
+            patch("src.core.llm_engine.local_ocr.recognize_text", side_effect=recognize),
+            patch.object(worker, "_translate_text") as translate,
+        ):
+            worker.run()
+        self.assertEqual(sources, [])
+        translate.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()
