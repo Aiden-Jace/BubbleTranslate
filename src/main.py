@@ -12,6 +12,7 @@ if project_root not in sys.path:
 from PySide6.QtWidgets import QApplication, QMainWindow, QSystemTrayIcon, QMenu, QStyle, QWidget, QMessageBox
 from PySide6.QtCore import Qt, QObject, QEvent, QTimer
 from PySide6.QtGui import QPixmap, QAction, QCursor
+from shiboken6 import isValid
 
 from src import config
 from src.core.listener import HotkeyListener
@@ -33,11 +34,22 @@ class GlobalEventFilter(QObject):
         self.app = app_instance
         self._right_double_click_active = False
 
+    def deactivate(self):
+        self.app = None
+        self._right_double_click_active = False
+
     def eventFilter(self, obj, event):
+        if self.app is None:
+            return False
+        overlay = self.app.overlay
+        if isinstance(overlay, QObject) and not isValid(overlay):
+            return False
         # 仅当截图层显示时工作
-        if self.app.overlay and self.app.overlay.isVisible():
+        if overlay and overlay.isVisible():
             # 气泡语言区域自行处理右键交换，不触发截图模式的关闭动作。
             bubble = self.app.bubble
+            if isinstance(bubble, QObject) and not isValid(bubble):
+                bubble = None
             # 原生窗口先收到鼠标事件，此时 obj 是 QWindow，需按全局位置识别。
             if (
                 bubble
@@ -88,6 +100,7 @@ class BubbleTranslateApp(QMainWindow):
     """
     def __init__(self):
         super().__init__()
+        self._shutting_down = False
         # 隐藏主窗口
         self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
@@ -142,8 +155,15 @@ class BubbleTranslateApp(QMainWindow):
         self.listener.start()
 
         self.init_tray()
-        QTimer.singleShot(300, self._prepare_capture_ui)
-        QTimer.singleShot(500, self.capture_service.warm_up)
+        self._ui_warm_up_timer = QTimer(self)
+        self._ui_warm_up_timer.setSingleShot(True)
+        self._ui_warm_up_timer.timeout.connect(self._prepare_capture_ui)
+        self._ui_warm_up_timer.start(300)
+        self._capture_warm_up_timer = QTimer(self)
+        self._capture_warm_up_timer.setSingleShot(True)
+        self._capture_warm_up_timer.timeout.connect(self.capture_service.warm_up)
+        self._capture_warm_up_timer.start(500)
+        app.aboutToQuit.connect(self._shutdown)
         print("--- 气泡翻译 (Bubble Translate) 已启动 ---")
         if config.TRANSLATION_MODE == "LLM":
             print(f"翻译模式: 大模型翻译 (LLM) 双阶段 AI 翻译 (OCR: {config.OCR_MODEL} -> Chat: {config.CHAT_MODEL})")
@@ -201,6 +221,8 @@ class BubbleTranslateApp(QMainWindow):
         self.config_window.raise_()
 
     def resume_hotkeys(self):
+        if self._shutting_down:
+            return
         self.listener.set_hotkeys_enabled(True)
 
     def ensure_bubble(self):
@@ -254,6 +276,8 @@ class BubbleTranslateApp(QMainWindow):
             self.overlay.update()
 
     def start_capture_mode(self):
+        if self._shutting_down:
+            return
         # 如果已经显示了，直接返回
         if self._capture_pending or (self.overlay and self.overlay.isVisible()):
             return
@@ -278,6 +302,8 @@ class BubbleTranslateApp(QMainWindow):
         self.capture_service.invalidate()
 
     def _prepare_capture_ui(self):
+        if self._shutting_down:
+            return
         # 提前完成字体、布局和原生窗口初始化，不显示窗口或改变焦点。
         if not self.overlay:
             self._create_overlay()
@@ -525,6 +551,20 @@ class BubbleTranslateApp(QMainWindow):
             
         self.hide_bubble()
     def quit_app(self):
+        self._shutdown()
+        QApplication.quit()
+
+    def _shutdown(self):
+        """先注销事件过滤器，再停止任务并关闭窗口；退出信号重复触发也安全。"""
+        if self._shutting_down:
+            return
+        self._shutting_down = True
+        self.event_filter.deactivate()
+        QApplication.instance().removeEventFilter(self.event_filter)
+        self._capture_pending = False
+        self._capture_generation += 1
+        self._ui_warm_up_timer.stop()
+        self._capture_warm_up_timer.stop()
         self._clear_translation_stream()
         self._capture_prepare_timer.stop()
         self.capture_service.stop()
@@ -533,7 +573,13 @@ class BubbleTranslateApp(QMainWindow):
         self.listener.stop()
         self.listener.wait(1000)
         self.llm_engine.stop()
-        QApplication.quit()
+        for name in ("overlay", "bubble", "config_window"):
+            window = getattr(self, name)
+            setattr(self, name, None)
+            if window is not None and isValid(window):
+                window.close()
+                window.deleteLater()
+        self.tray_icon.hide()
 
 if __name__ == "__main__":
     # Windows 下创建命名互斥量，防止重复启动，并供安装/卸载程序检测

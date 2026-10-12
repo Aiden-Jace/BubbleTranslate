@@ -83,6 +83,7 @@ class CapturePerformanceTests(unittest.TestCase):
 
     def test_repeated_hotkeys_do_not_queue_duplicate_capture(self):
         app = Mock()
+        app._shutting_down = False
         app.overlay = None
         app._capture_pending = False
         app._capture_generation = 0
