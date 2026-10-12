@@ -10,6 +10,7 @@
 - `src/core/local_ocr.py`：本地 CPU OCR，懒加载 RapidOCR + PP-OCRv6 small，串行复用 ONNX Runtime CPU 会话。
 - `src/core/translation_services.py`：DeepL、百度、有道和 Google 翻译适配。
 - `src/core/listener.py`：Windows/macOS 全局快捷键监听。
+- `src/core/screenshot.py`：后台截屏线程、MSS 资源预热与复用、屏幕布局变更后的重新初始化。
 - `src/core/selection_capture.py`：异步选中文本读取与剪贴板恢复。
 - `src/ui/bubble.py`：翻译气泡及语言、编辑和内容展示状态。
 - `src/ui/config_gui.py`：设置、气泡、模型和 API 配置页面。
@@ -33,6 +34,15 @@
 3. 识别出的原文交给当前翻译引擎。
 4. 气泡展示译文，编辑模式可查看和修改原文。
 
+### 界面性能
+
+- 启动后延迟准备隐藏的截图窗口和气泡，提前完成字体与窗口初始化。Windows 在后台预热截屏缓冲区，不保存预热截图；macOS 留到用户主动截屏时请求屏幕录制权限。
+- MSS 的创建、截屏和释放均在同一个后台线程；BGRA 数据直接转换成具有独立内存的 QImage，界面线程只创建 QPixmap 并显示。
+- 截图准备期间忽略重复快捷键；退出时使请求编号失效，丢弃延迟返回的旧截图。
+- Windows 退出截图时隐藏并清空窗口内容，下次复用窗口；macOS 继续重建窗口以恢复输入焦点。
+- 拖动选区只重绘新旧选框覆盖的区域。裁剪转 PIL 时使用实际行跨度，兼容 RGB 行对齐。
+- 流式译文每 40 ms 合并刷新一次，最终结果立即显示；移除内容更新中的嵌套事件循环。
+
 ## 配置原则
 
 - OCR API 与翻译模型 API 完全独立。
@@ -49,6 +59,7 @@
 - OpenAI 普通与流式响应解析。
 - OCR API 和翻译 API 路由。
 - 本地 CPU OCR 路由、会话复用、输入图像保护及取消/异常处理。
+- 截屏后台线程、资源复用与失败重试、旧请求丢弃、窗口复用、裁剪行对齐及流式刷新合并。
 - 图片编码不修改输入对象。
 - 百度签名和 Google 响应解析。
 - 按引擎独立语言列表。

@@ -1,6 +1,7 @@
 import sys
 import os
 import signal
+from PIL import Image
 
 # 自动修复导入路径
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -10,12 +11,12 @@ if project_root not in sys.path:
 
 from PySide6.QtWidgets import QApplication, QMainWindow, QSystemTrayIcon, QMenu, QStyle, QWidget, QMessageBox
 from PySide6.QtCore import Qt, QObject, QEvent, QTimer
-from PySide6.QtGui import QPixmap, QImage, QAction, QCursor
+from PySide6.QtGui import QPixmap, QAction, QCursor
 
 from src import config
 from src.core.listener import HotkeyListener
 from src.core.selection_capture import ClipboardSelectionReader
-from src.core.screenshot import capture_screen, get_dpi_scaling
+from src.core.screenshot import CaptureService, get_dpi_scaling
 from src.core.llm_engine import LLMVisionEngine
 from src.ui.overlay import CaptureOverlay
 from src.ui.bubble import TranslationBubble
@@ -100,6 +101,24 @@ class BubbleTranslateApp(QMainWindow):
         self.config_window = None
         self.dpi_ratio = 1.0
         self.current_source_text = ""
+        self._capture_pending = False
+        self._capture_generation = 0
+        self.capture_service = CaptureService(self)
+        self.capture_service.ready.connect(self._show_capture_frame)
+        self.capture_service.failed.connect(self._capture_failed)
+        app = QApplication.instance()
+        for screen in app.screens():
+            screen.geometryChanged.connect(self.capture_service.invalidate)
+        app.screenAdded.connect(self._capture_screen_added)
+        app.screenRemoved.connect(self.capture_service.invalidate)
+        self._capture_prepare_timer = QTimer(self)
+        self._capture_prepare_timer.setSingleShot(True)
+        self._capture_prepare_timer.timeout.connect(self._request_capture_frame)
+        self._pending_stream_text = None
+        self._stream_timer = QTimer(self)
+        self._stream_timer.setSingleShot(True)
+        self._stream_timer.setInterval(40)
+        self._stream_timer.timeout.connect(self._flush_translation_stream)
         self.selection_reader = ClipboardSelectionReader(self)
         self.selection_tip = SelectionTranslateTip()
         self.selection_tip.translate_requested.connect(
@@ -123,6 +142,8 @@ class BubbleTranslateApp(QMainWindow):
         self.listener.start()
 
         self.init_tray()
+        QTimer.singleShot(300, self._prepare_capture_ui)
+        QTimer.singleShot(500, self.capture_service.warm_up)
         print("--- 气泡翻译 (Bubble Translate) 已启动 ---")
         if config.TRANSLATION_MODE == "LLM":
             print(f"翻译模式: 大模型翻译 (LLM) 双阶段 AI 翻译 (OCR: {config.OCR_MODEL} -> Chat: {config.CHAT_MODEL})")
@@ -234,26 +255,59 @@ class BubbleTranslateApp(QMainWindow):
 
     def start_capture_mode(self):
         # 如果已经显示了，直接返回
-        if self.overlay and self.overlay.isVisible():
+        if self._capture_pending or (self.overlay and self.overlay.isVisible()):
             return
-            
+        self._capture_pending = True
+        self._capture_generation += 1
         # 修复 Bug: 进入截图模式前，先清理掉可能存在的翻译气泡
         self.selection_reader.cancel()
         self.selection_tip.hide()
         self.hide_bubble()
         
-        # macOS 特有处理：强制等待气泡窗口完全消失后再进行截屏，防止气泡被截入图中
-        if sys.platform == "darwin":
-            import time
-            for _ in range(3):
-                QApplication.processEvents()
-                time.sleep(0.05)
+        # 给窗口管理器时间移除气泡；使用定时器避免阻塞界面线程。
+        self._capture_prepare_timer.start(150 if sys.platform == "darwin" else 0)
 
+    def _request_capture_frame(self):
+        if not self._capture_pending:
+            return
         self.dpi_ratio = get_dpi_scaling()
-        pil_img = capture_screen()
-        
+        self.capture_service.capture(self._capture_generation)
+
+    def _capture_screen_added(self, screen):
+        screen.geometryChanged.connect(self.capture_service.invalidate)
+        self.capture_service.invalidate()
+
+    def _prepare_capture_ui(self):
+        # 提前完成字体、布局和原生窗口初始化，不显示窗口或改变焦点。
+        if not self.overlay:
+            self._create_overlay()
+        self.overlay.ensurePolished()
+        self.overlay.winId()
+        bubble = self.ensure_bubble()
+        bubble.ensurePolished()
+
+    def _create_overlay(self):
+        self.overlay = CaptureOverlay()
+        self.overlay.area_selected.connect(self.request_llm_translation)
+        self.overlay.exit_requested.connect(self.exit_capture_mode)
+        self.overlay.reset_requested.connect(self.reset_capture_selection)
+
+    def _capture_failed(self, request_id, message):
+        if request_id != self._capture_generation or not self._capture_pending:
+            return
+        self._capture_pending = False
+        QMessageBox.warning(self.config_window, "截图失败", message)
+
+    def _show_capture_frame(self, request_id, frame):
+        if request_id != self._capture_generation or not self._capture_pending:
+            return
+        self._capture_pending = False
         # 权限检测 (针对 macOS)
         if sys.platform == "darwin":
+            pil_img = Image.frombytes(
+                "RGB", (frame.width(), frame.height()), frame.constBits(),
+                "raw", "BGRX", frame.bytesPerLine(),
+            )
             extrema = pil_img.convert("L").getextrema()
             if extrema == (0, 0):
                 print("\n" + "!"*50)
@@ -261,22 +315,16 @@ class BubbleTranslateApp(QMainWindow):
                 print("[Action] 请确保已在 '系统设置 -> 隐私与安全性 -> 屏幕录制' 中为终端/Python 开启权限。")
                 print("!"*50 + "\n")
 
-        # 内存安全：进行深拷贝
-        data = pil_img.tobytes("raw", "RGB")
-        qimg = QImage(data, pil_img.size[0], pil_img.size[1], QImage.Format_RGB888).copy()
-        pixmap = QPixmap.fromImage(qimg)
+        pixmap = QPixmap.fromImage(frame)
         
-        # 为了解决“第二次触发无法框选”的问题，每次都重新创建 Overlay 窗口
-        # 这能确保窗口状态（焦点、标志等）在 macOS 上是完全干净的
-        if self.overlay:
+        # macOS 重新创建窗口以刷新焦点状态；其他平台复用已预热的窗口。
+        if self.overlay and sys.platform == "darwin":
             self.overlay.close()
             self.overlay.deleteLater()
             self.overlay = None
 
-        self.overlay = CaptureOverlay()
-        self.overlay.area_selected.connect(self.request_llm_translation)
-        self.overlay.exit_requested.connect(self.exit_capture_mode)
-        self.overlay.reset_requested.connect(self.reset_capture_selection)
+        if not self.overlay:
+            self._create_overlay()
         
         self.overlay.set_data(pixmap, self.dpi_ratio)
         self.overlay.show_full_screen()
@@ -298,6 +346,7 @@ class BubbleTranslateApp(QMainWindow):
     def handle_selection_drag_finished(self, x, y):
         if (
             not config.AUTO_SELECTION_ENABLED
+            or self._capture_pending
             or (self.overlay and self.overlay.isVisible())
         ):
             return
@@ -314,6 +363,7 @@ class BubbleTranslateApp(QMainWindow):
     def _capture_automatic_selection(self, position):
         if (
             not config.AUTO_SELECTION_ENABLED
+            or self._capture_pending
             or (self.overlay and self.overlay.isVisible())
         ):
             return
@@ -355,6 +405,7 @@ class BubbleTranslateApp(QMainWindow):
         )
 
     def request_llm_translation(self, cropped_pil_img, rect):
+        self._clear_translation_stream()
         self.ensure_bubble()
 
         self.current_source_text = ""
@@ -390,6 +441,7 @@ class BubbleTranslateApp(QMainWindow):
         print(f"原文: {source_text}")
 
     def _start_text_translation(self, source_text, status_text):
+        self._clear_translation_stream()
         bubble = self.ensure_bubble()
         self.current_source_text = source_text
         bubble.set_source_text(source_text)
@@ -425,37 +477,57 @@ class BubbleTranslateApp(QMainWindow):
         )
 
     def on_translation_stream(self, partial_text):
-        if self.bubble:
-            self.bubble.set_text(partial_text)
+        self._pending_stream_text = partial_text
+        if not self._stream_timer.isActive():
+            self._stream_timer.start()
+
+    def _flush_translation_stream(self):
+        text = self._pending_stream_text
+        self._pending_stream_text = None
+        if self.bubble and text is not None:
+            self.bubble.set_text(text)
+
+    def _clear_translation_stream(self):
+        self._stream_timer.stop()
+        self._pending_stream_text = None
 
     def on_translation_success(self, translated_text):
+        self._clear_translation_stream()
         if self.bubble:
             self.bubble.set_text(translated_text)
         print(f"翻译结果: {translated_text}")
 
     def on_translation_error(self, error_msg):
+        self._clear_translation_stream()
         if self.bubble:
             self.bubble.set_status_text(error_msg)
         print(f"错误: {error_msg}")
 
     def hide_bubble(self):
+        self._clear_translation_stream()
         if self.bubble:
             self.bubble.hide()
-            QApplication.processEvents() 
 
     def exit_capture_mode(self):
         """
         退出截屏模式：隐藏截图层，清理资源
         """
+        self._capture_pending = False
+        self._capture_generation += 1
+        self._capture_prepare_timer.stop()
         if self.overlay:
             self.overlay.exit_mode()
-            # 为了下一次触发能彻底刷新状态，在退出时彻底清理对象
-            self.overlay.close()
-            self.overlay.deleteLater()
-            self.overlay = None
+            # macOS 需要重建原生窗口以恢复下一次框选的输入焦点。
+            if sys.platform == "darwin":
+                self.overlay.close()
+                self.overlay.deleteLater()
+                self.overlay = None
             
         self.hide_bubble()
     def quit_app(self):
+        self._clear_translation_stream()
+        self._capture_prepare_timer.stop()
+        self.capture_service.stop()
         self.selection_reader.cancel()
         self.selection_tip.close()
         self.listener.stop()

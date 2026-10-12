@@ -695,7 +695,6 @@ class TranslationBubble(QWidget):
         self.translation_label.setText(self.translation_text if has_translation else self.placeholder_text)
 
         self._resize_to_content()
-        QApplication.processEvents()
 
     def _set_section_button(self, button, text, expanded):
         button.setText(text)

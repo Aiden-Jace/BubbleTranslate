@@ -1,4 +1,5 @@
 import unittest
+import sys
 from unittest.mock import Mock, patch
 
 from PySide6.QtCore import QEvent, QPoint, Qt
@@ -73,6 +74,7 @@ class CaptureExitTests(unittest.TestCase):
         for bubble_visible in (True, False):
             with self.subTest(bubble_visible=bubble_visible):
                 app = Mock()
+                app._capture_generation = 0
                 overlay = app.overlay
                 overlay.isVisible.return_value = True
                 app.bubble.isVisible.return_value = bubble_visible
@@ -90,9 +92,15 @@ class CaptureExitTests(unittest.TestCase):
 
                 app.exit_capture_mode.assert_called_once_with()
                 overlay.exit_mode.assert_called_once_with()
-                overlay.close.assert_called_once_with()
-                overlay.deleteLater.assert_called_once_with()
-                self.assertIsNone(app.overlay)
+                if sys.platform == "darwin":
+                    overlay.close.assert_called_once_with()
+                    overlay.deleteLater.assert_called_once_with()
+                    self.assertIsNone(app.overlay)
+                else:
+                    overlay.close.assert_not_called()
+                    overlay.deleteLater.assert_not_called()
+                    self.assertIs(app.overlay, overlay)
+                self.assertFalse(app._capture_pending)
                 app.hide_bubble.assert_called_once_with()
 
     def test_new_selection_clears_previous_result_without_exiting(self):
@@ -147,6 +155,7 @@ class SelectionTipPositionTests(unittest.TestCase):
     def test_drag_uses_qt_cursor_position_instead_of_physical_coordinates(self):
         app = Mock()
         app.overlay = None
+        app._capture_pending = False
         app.selection_tip = Mock()
         app._capture_automatic_selection = Mock()
         logical_position = QPoint(320, 240)

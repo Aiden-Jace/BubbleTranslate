@@ -42,6 +42,10 @@ class CaptureOverlay(QWidget):
         self.is_selecting = False
         self.drag_threshold = 3
         self.persisted_rect = None
+        self._hint_font = QFont()
+        self._hint_font.setFamilies(["Microsoft YaHei", "PingFang SC", "Segoe UI", "Arial"])
+        self._hint_font.setPointSize(11)
+        self._hint_font.setBold(True)
 
     def set_data(self, pixmap, dpi_ratio):
         self.pixmap = pixmap
@@ -71,11 +75,7 @@ class CaptureOverlay(QWidget):
             painter.drawRect(self.persisted_rect)
 
         painter.setPen(Qt.white)
-        font = QFont()
-        font.setFamilies(["Microsoft YaHei", "PingFang SC", "Segoe UI", "Arial"])
-        font.setPointSize(11)
-        font.setBold(True)
-        painter.setFont(font)
+        painter.setFont(self._hint_font)
         painter.drawText(self.rect().adjusted(25, 25, -25, -25), Qt.AlignLeft | Qt.AlignTop, "左键框选翻译，双击右键或 Esc 退出翻译")
 
     def mousePressEvent(self, event):
@@ -100,9 +100,11 @@ class CaptureOverlay(QWidget):
             pos = event.pos()
             dist = (pos - self.selection_start).manhattanLength()
             if dist > self.drag_threshold:
+                old_rect = QRect(self.selection_start, self.selection_current).normalized()
                 self.is_selecting = True
                 self.selection_current = pos
-                self.update()
+                new_rect = QRect(self.selection_start, self.selection_current).normalized()
+                self.update(old_rect.united(new_rect).adjusted(-3, -3, 3, 3))
             event.accept()
 
     def mouseReleaseEvent(self, event):
@@ -117,9 +119,15 @@ class CaptureOverlay(QWidget):
 
     def process_selection(self, rect):
         if not self.pixmap: return
-        p_rect = QRect(rect.x()*self.dpi_ratio, rect.y()*self.dpi_ratio, rect.width()*self.dpi_ratio, rect.height()*self.dpi_ratio)
+        p_rect = QRect(
+            round(rect.x() * self.dpi_ratio), round(rect.y() * self.dpi_ratio),
+            round(rect.width() * self.dpi_ratio), round(rect.height() * self.dpi_ratio),
+        )
         qimage = self.pixmap.copy(p_rect).toImage().convertToFormat(QImage.Format_RGB888)
-        pil_img = Image.frombytes("RGB", (qimage.width(), qimage.height()), qimage.bits(), "raw", "RGB")
+        pil_img = Image.frombytes(
+            "RGB", (qimage.width(), qimage.height()), qimage.constBits(),
+            "raw", "RGB", qimage.bytesPerLine(),
+        )
         self.area_selected.emit(pil_img, rect)
 
     def exit_mode(self):
