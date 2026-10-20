@@ -21,12 +21,10 @@ def pil_to_base64(pil_image):
 
 
 def _translation_prompt(source_language, target_language, from_ocr=False):
-    context = "你会收到一段由 OCR 识别出的原始文本。" if from_ocr else ""
-    return (
-        f"你是一个专业的翻译专家。{context}"
-        f"原文语言为{source_language}。请将文本准确、自然地翻译成"
-        f"{target_language}。根据语义组织译文，保留原文的段落、列表和必要格式。"
-        "不要新增解释，不要输出原文，只输出完整译文。"
+    languages = dict(source_language=source_language, target_language=target_language)
+    context = config.render_prompt('OCR_CONTEXT', **languages) if from_ocr else ""
+    return config.render_prompt(
+        'TRANSLATION_SYSTEM', ocr_context=context, **languages,
     )
 
 
@@ -182,11 +180,10 @@ class LLMVisionWorker(TranslationWorkerBase):
             "messages": [
                 {
                     "role": "system",
-                    "content": (
-                        "你是一个高精度截图文字转写器。只转写图片中真实可见的文字，"
-                        "不要翻译、解释、纠错、补全或猜测被遮挡的内容。"
-                        "按自然阅读顺序输出，保留有语义的段落和列表结构，"
-                        "忽略仅由图片宽度造成的自动换行。只输出转写原文。"
+                    "content": config.render_prompt(
+                        'VLM_SYSTEM',
+                        source_language=self.source_lang,
+                        target_language=self.target_lang,
                     ),
                 },
                 {
@@ -200,9 +197,10 @@ class LLMVisionWorker(TranslationWorkerBase):
                         },
                         {
                             "type": "text",
-                            "text": (
-                                "请精确转写截图中的原文。用户指定的原文语言为"
-                                f"{self.source_lang}；若为自动检测，请自行判断语言。"
+                            "text": config.render_prompt(
+                                'VLM_USER',
+                                source_language=self.source_lang,
+                                target_language=self.target_lang,
                             ),
                         },
                     ],
@@ -233,7 +231,14 @@ class LLMVisionWorker(TranslationWorkerBase):
                                 "url": f"data:image/png;base64,{image_base64}"
                             },
                         },
-                        {"type": "text", "text": "OCR:"},
+                        {
+                            "type": "text",
+                            "text": config.render_prompt(
+                                'OCR_USER',
+                                source_language=self.source_lang,
+                                target_language=self.target_lang,
+                            ),
+                        },
                     ],
                 }
             ],

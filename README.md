@@ -150,6 +150,35 @@ python -m src.main
 
 `config.ini` 已加入 `.gitignore`，请勿提交真实密钥。
 
+#### 自定义模型提示词
+
+关闭程序后编辑 `config.ini` 的 `[Prompts]` 段，保存并重新启动即可生效。首次运行会生成默认提示词；升级后启动时会为旧配置补齐缺失项，保留已有自定义内容。
+
+| 配置项 | 用途 |
+| --- | --- |
+| `TRANSLATION_SYSTEM` | LLM 翻译的系统提示词，划词、手动输入和截图识别后的翻译共用 |
+| `OCR_CONTEXT` | 截图翻译时插入 `{ocr_context}` 的补充说明，可留空 |
+| `VLM_SYSTEM` | VLM 截图文字识别的系统提示词 |
+| `VLM_USER` | VLM 识别请求中与截图一起发送的文字提示词 |
+| `OCR_USER` | 专用 OCR 模型的文字提示词，默认 `OCR:`，可按模型要求修改 |
+
+语言占位符 `{source_language}` 和 `{target_language}` 会替换为当前选择的语言；`{ocr_context}` 仅用于 `TRANSLATION_SYSTEM`，非截图翻译时为空。百分号、JSON 花括号和未知占位符保留原文。除 `OCR_CONTEXT` 外，空白配置项回退到默认提示词。
+
+例如，偏好英文指令的模型可以使用：
+
+```ini
+[Prompts]
+TRANSLATION_SYSTEM = You are a professional translator. {ocr_context}
+    Translate from {source_language} to {target_language}.
+    Preserve paragraphs and lists. Output only the translation.
+OCR_CONTEXT = The input text was extracted from a screenshot using OCR.
+VLM_SYSTEM = Transcribe only the visible text in the image. Do not translate or explain.
+VLM_USER = Read the text in {source_language}. Detect the language if set to auto-detect.
+OCR_USER = OCR:
+```
+
+多行提示词的后续行必须缩进。提示词配置用于 LLM、VLM 和 OCR API，不改变 DeepL、百度、有道、Google 或本地 CPU OCR 的调用方式。
+
 #### 本地 CPU OCR
 
 1. 安装 `requirements.txt` 中的依赖。
@@ -321,6 +350,8 @@ Right-click the tray icon to open the settings window:
 - **API**: LLM, OCR, DeepL, Baidu, and Youdao credentials.
 
 Local development settings are stored in `config.ini`. The file is ignored by Git and should never be committed with real credentials.
+
+Customize model instructions in the `[Prompts]` section of `config.ini`, then restart the app. Available keys are `TRANSLATION_SYSTEM`, `OCR_CONTEXT`, `VLM_SYSTEM`, `VLM_USER`, and `OCR_USER`. Language placeholders `{source_language}` and `{target_language}` use the selected languages; `{ocr_context}` inserts screenshot-specific context into the translation prompt and is empty for text translation. Indent continuation lines for multiline prompts. Missing keys are added automatically without replacing custom values. Blank prompts use defaults, except `OCR_CONTEXT`, which may be empty. These settings do not affect external translation providers or local CPU OCR.
 
 ### Tests
 

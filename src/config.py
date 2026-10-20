@@ -2,6 +2,7 @@ import os
 import sys
 import configparser
 import shutil
+import re
 
 # 自动定位配置文件路径
 # 如果是打包环境，保存在用户目录下，防止 C:\Program Files 无权限写入
@@ -45,6 +46,26 @@ defaults = {
         'MODE': "DEEPL",
         'STRATEGY': "LOCAL_CPU",
         'TARGET_LANGUAGE': "中文"
+    },
+    'Prompts': {
+        'TRANSLATION_SYSTEM': (
+            "你是一个专业的翻译专家。{ocr_context}"
+            "原文语言为{source_language}。请将文本准确、自然地翻译成"
+            "{target_language}。根据语义组织译文，保留原文的段落、列表和必要格式。"
+            "不要新增解释，不要输出原文，只输出完整译文。"
+        ),
+        'OCR_CONTEXT': "你会收到一段由 OCR 识别出的原始文本。",
+        'VLM_SYSTEM': (
+            "你是一个高精度截图文字转写器。只转写图片中真实可见的文字，"
+            "不要翻译、解释、纠错、补全或猜测被遮挡的内容。"
+            "按自然阅读顺序输出，保留有语义的段落和列表结构，"
+            "忽略仅由图片宽度造成的自动换行。只输出转写原文。"
+        ),
+        'VLM_USER': (
+            "请精确转写截图中的原文。用户指定的原文语言为"
+            "{source_language}；若为自动检测，请自行判断语言。"
+        ),
+        'OCR_USER': "OCR:",
     },
     'LanguagePreferences': {
         'LLM_SOURCE': "自动检测",
@@ -90,7 +111,8 @@ defaults = {
     }
 }
 
-_parser = configparser.ConfigParser()
+# 提示词中的百分号按原文保存，不启用 INI 的 % 插值。
+_parser = configparser.ConfigParser(interpolation=None)
 
 def load_config():
     if not os.path.exists(CONFIG_FILE):
@@ -102,12 +124,35 @@ def load_config():
         print(f"[Config] 首次运行，已生成配置文件: {CONFIG_FILE}")
     else:
         _parser.read(CONFIG_FILE, encoding='utf-8')
+        # 为已有用户补齐可编辑的提示词，保留自定义内容和其他配置。
+        changed = False
+        if not _parser.has_section('Prompts'):
+            _parser.add_section('Prompts')
+        for option, value in defaults['Prompts'].items():
+            if not _parser.has_option('Prompts', option):
+                _parser.set('Prompts', option, value)
+                changed = True
+        if changed:
+            save_config_to_file()
 
 def save_config_to_file():
     temporary_file = f"{CONFIG_FILE}.tmp"
     with open(temporary_file, 'w', encoding='utf-8') as file:
         _parser.write(file)
     os.replace(temporary_file, CONFIG_FILE)
+
+
+def render_prompt(option, **variables):
+    """仅替换已提供的占位符，保留 JSON、百分号和其他花括号原文。"""
+    template = _parser.get('Prompts', option, fallback=defaults['Prompts'][option])
+    # 空提示词恢复默认；OCR_CONTEXT 允许留空以关闭 OCR 附加说明。
+    if not template.strip() and option != 'OCR_CONTEXT':
+        template = defaults['Prompts'][option]
+    return re.sub(
+        r'\{([a-z_]+)\}',
+        lambda match: str(variables[match[1]]) if match[1] in variables else match[0],
+        template,
+    )
 
 # 执行加载
 load_config()
