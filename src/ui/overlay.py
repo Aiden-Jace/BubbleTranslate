@@ -22,7 +22,11 @@ class CaptureOverlay(QWidget):
             flags = Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool
         
         self.setWindowFlags(flags)
-        self.setAttribute(Qt.WA_TranslucentBackground)
+        if sys.platform == "darwin":
+            self.setAttribute(Qt.WA_TranslucentBackground)
+        else:
+            # 截图已覆盖整个窗口；遮罩直接画在截图上，无需透明原生窗口。
+            self.setAttribute(Qt.WA_OpaquePaintEvent)
         # 确保能接收鼠标移动事件
         self.setMouseTracking(True)
         self.setCursor(Qt.CrossCursor)
@@ -52,12 +56,16 @@ class CaptureOverlay(QWidget):
         self.dpi_ratio = dpi_ratio
         self.persisted_rect = None 
         self.is_selecting = False
+        self.selection_start = QPoint()
+        self.selection_current = QPoint()
         self.update()
 
     def paintEvent(self, event):
         painter = QPainter(self)
         if self.pixmap:
             painter.drawPixmap(self.rect(), self.pixmap)
+        else:
+            painter.fillRect(self.rect(), Qt.black)
         
         # 蒙版
         painter.fillRect(self.rect(), QColor(0, 0, 0, 80))
@@ -131,21 +139,24 @@ class CaptureOverlay(QWidget):
         self.area_selected.emit(pil_img, rect)
 
     def exit_mode(self):
-        self.hide()
-        self.pixmap = None 
         self.persisted_rect = None
         self.is_selecting = False
-        self.update()
+        self.selection_start = QPoint()
+        self.selection_current = QPoint()
+        # 隐藏后 update() 不会立即重绘，复用原生窗口时可能闪出缓存的旧选框。
+        # 保留截图作为背景，在窗口仍可见时同步擦除选框，再隐藏并释放截图。
+        if self.isVisible():
+            self.repaint()
+        self.hide()
+        self.pixmap = None
 
     def show_full_screen(self):
         # 强制更新几何尺寸并显示
         screen_geo = self.screen().geometry()
         self.setGeometry(screen_geo)
         
-        if sys.platform == "darwin":
-            self.showNormal()
-        else:
-            self.showFullScreen()
+        # 无边框置顶窗口按屏幕尺寸覆盖即可，避免进入/退出全屏状态的系统过渡。
+        self.showNormal()
             
         self.raise_()
         self.activateWindow()

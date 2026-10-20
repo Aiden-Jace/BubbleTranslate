@@ -7,11 +7,11 @@ from unittest.mock import Mock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QEventLoop, QRect, QTimer
+from PySide6.QtCore import QEventLoop, QPoint, QRect, QTimer, Qt
 from PySide6.QtGui import QColor, QImage, QPixmap
 from PySide6.QtWidgets import QApplication
 
-from src.core.screenshot import CaptureService, _CaptureWorker
+from src.core.screenshot import CaptureService, _CaptureWorker, _wait_for_desktop
 from src.main import BubbleTranslateApp
 from src.ui.overlay import CaptureOverlay
 
@@ -81,6 +81,72 @@ class CapturePerformanceTests(unittest.TestCase):
         broken.close.assert_called_once()
         good.close.assert_called_once()
 
+    def test_capture_waits_for_desktop_before_grabbing_on_worker_thread(self):
+        calls = []
+        screen = Mock()
+        screen.monitors = [{}]
+
+        def grab(monitor):
+            calls.append(("grab", threading.get_ident()))
+            return SimpleNamespace(width=1, height=1, bgra=bytes([0, 0, 255, 0]))
+
+        screen.grab.side_effect = grab
+        loop = QEventLoop()
+        timeout = QTimer()
+        timeout.setSingleShot(True)
+        timeout.timeout.connect(loop.quit)
+        frames = []
+        with (
+            patch("src.core.screenshot.mss.mss", return_value=screen),
+            patch("src.core.screenshot._wait_for_desktop",
+                  side_effect=lambda: calls.append(("sync", threading.get_ident()))),
+        ):
+            service = CaptureService()
+            service.ready.connect(lambda request_id, frame: (frames.append(frame), loop.quit()))
+            try:
+                service.capture(1)
+                timeout.start(3000)
+                loop.exec()
+            finally:
+                timeout.stop()
+                service.stop()
+        self.assertEqual(len(frames), 1)
+        self.assertEqual([name for name, _ in calls], ["sync", "grab"])
+        self.assertEqual(calls[0][1], calls[1][1])
+        self.assertNotEqual(calls[0][1], threading.get_ident())
+
+    def test_desktop_sync_is_windows_only_and_unavailable_compositor_is_tolerated(self):
+        with patch("src.core.screenshot.ctypes.windll", create=True) as windll:
+            with patch("src.core.screenshot.sys.platform", "win32"):
+                _wait_for_desktop()
+                windll.dwmapi.DwmFlush.assert_called_once_with()
+                windll.dwmapi.DwmFlush.side_effect = OSError("unavailable")
+                _wait_for_desktop()
+            windll.reset_mock()
+            with patch("src.core.screenshot.sys.platform", "darwin"):
+                _wait_for_desktop()
+                windll.dwmapi.DwmFlush.assert_not_called()
+
+    def test_windows_overlay_covers_screen_without_fullscreen_or_translucency(self):
+        with patch("src.ui.overlay.sys.platform", "win32"):
+            overlay = CaptureOverlay()
+            self.addCleanup(overlay.close)
+            frame = QPixmap(20, 20)
+            frame.fill(QColor("white"))
+            overlay.set_data(frame, 1.0)
+            for _ in range(2):
+                overlay.show_full_screen()
+                self.app.processEvents()
+                self.assertTrue(overlay.isVisible())
+                self.assertFalse(overlay.isFullScreen())
+                self.assertEqual(overlay.geometry(), overlay.screen().geometry())
+                self.assertFalse(overlay.testAttribute(Qt.WA_TranslucentBackground))
+                self.assertTrue(overlay.testAttribute(Qt.WA_OpaquePaintEvent))
+                image = overlay.grab().toImage()
+                self.assertEqual(image.pixelColor(image.width() // 2, image.height() // 2).alpha(), 255)
+                overlay.exit_mode()
+                overlay.set_data(frame, 1.0)
+
     def test_repeated_hotkeys_do_not_queue_duplicate_capture(self):
         app = Mock()
         app._shutting_down = False
@@ -129,6 +195,47 @@ class CapturePerformanceTests(unittest.TestCase):
             worker.capture(2)
             self.assertEqual(create.call_count, 2)
         worker.close()
+
+    def test_exit_repaints_without_selection_before_hiding(self):
+        class RecordingOverlay(CaptureOverlay):
+            def paintEvent(self, event):
+                super().paintEvent(event)
+                self.painted_states.append((
+                    self.persisted_rect, self.is_selecting, self.pixmap is not None,
+                ))
+
+            def hideEvent(self, event):
+                self.states_at_hide = list(self.painted_states)
+                super().hideEvent(event)
+
+        # Cover both a completed selection and exiting in the middle of a drag.
+        for dragging in (False, True):
+            with self.subTest(dragging=dragging):
+                overlay = RecordingOverlay()
+                overlay.painted_states = []
+                self.addCleanup(overlay.close)
+                overlay.resize(200, 200)
+                frame = QPixmap(200, 200)
+                frame.fill(QColor("white"))
+                overlay.set_data(frame, 1.0)
+                overlay.show()
+                self.app.processEvents()
+                overlay.selection_start = QPoint(50, 50)
+                overlay.selection_current = QPoint(150, 150)
+                overlay.persisted_rect = QRect(50, 50, 100, 100)
+                overlay.is_selecting = dragging
+                overlay.repaint()
+                overlay.painted_states.clear()
+
+                overlay.exit_mode()
+
+                # No event-loop turn: the cached frame must be clean at hide time.
+                self.assertTrue(overlay.states_at_hide)
+                self.assertEqual(overlay.states_at_hide[-1], (None, False, True))
+                self.assertFalse(overlay.isVisible())
+                self.assertIsNone(overlay.pixmap)
+                self.assertEqual(overlay.selection_start, QPoint())
+                self.assertEqual(overlay.selection_current, QPoint())
 
     def test_exit_discards_frame_from_previous_request(self):
         app = Mock()

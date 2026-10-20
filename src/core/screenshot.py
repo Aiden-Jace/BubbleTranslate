@@ -1,8 +1,19 @@
 import mss
 import sys
+import ctypes
 from PIL import Image
 from PySide6.QtCore import QObject, QThread, Signal, Slot
 from PySide6.QtGui import QImage
+
+
+def _wait_for_desktop():
+    if sys.platform == "win32":
+        try:
+            # 等待隐藏气泡等操作提交到桌面合成器；仅阻塞截屏线程。
+            ctypes.windll.dwmapi.DwmFlush()
+        except (AttributeError, OSError):
+            # 合成服务不可用时仍允许正常截屏。
+            pass
 
 
 class _CaptureWorker(QObject):
@@ -34,6 +45,7 @@ class _CaptureWorker(QObject):
     @Slot(int)
     def capture(self, request_id):
         try:
+            _wait_for_desktop()
             screenshot = self._grab()
             # BGRA 可直接交给 Qt，跳过整屏 PIL/RGB 转换；copy 保证跨线程内存独立。
             frame = QImage(
