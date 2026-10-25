@@ -39,7 +39,8 @@ class ShutdownTests(unittest.TestCase):
             patch.object(BubbleTranslateApp, "init_tray", lambda obj: setattr(obj, "tray_icon", Mock())),
         ):
             controller = BubbleTranslateApp()
-        controller._prepare_capture_ui()
+        controller._create_overlay()
+        controller.ensure_bubble()
         overlay = controller.overlay
         bubble = controller.bubble
         try:
@@ -58,11 +59,10 @@ class ShutdownTests(unittest.TestCase):
             self.assertIsNone(controller.event_filter.app)
             for name in ("overlay", "bubble", "config_window"):
                 self.assertIsNone(getattr(controller, name))
-            for name in ("_ui_warm_up_timer", "_capture_warm_up_timer", "_capture_prepare_timer", "_stream_timer"):
+            for name in ("_capture_prepare_timer", "_stream_timer"):
                 self.assertFalse(getattr(controller, name).isActive())
             self.assertFalse(controller._capture_pending)
-            # 模拟预热回调已经排队；退出后不能重新创建窗口。
-            controller._prepare_capture_ui()
+            # 退出后不能通过快捷键重新启动截图。
             controller.start_capture_mode()
             self.assertIsNone(controller.overlay)
             self.assertFalse(controller._capture_pending)

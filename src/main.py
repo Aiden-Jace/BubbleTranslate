@@ -155,14 +155,8 @@ class BubbleTranslateApp(QMainWindow):
         self.listener.start()
 
         self.init_tray()
-        self._ui_warm_up_timer = QTimer(self)
-        self._ui_warm_up_timer.setSingleShot(True)
-        self._ui_warm_up_timer.timeout.connect(self._prepare_capture_ui)
-        self._ui_warm_up_timer.start(300)
-        self._capture_warm_up_timer = QTimer(self)
-        self._capture_warm_up_timer.setSingleShot(True)
-        self._capture_warm_up_timer.timeout.connect(self.capture_service.warm_up)
-        self._capture_warm_up_timer.start(500)
+        # 截图层、翻译气泡和截屏缓冲区在首次使用时初始化。
+        # 启动后保持空闲，避免字体、控件初始化和整屏抓取集中执行。
         app.aboutToQuit.connect(self._shutdown)
         print("--- 气泡翻译 (Bubble Translate) 已启动 ---")
         if config.TRANSLATION_MODE == "LLM":
@@ -301,17 +295,6 @@ class BubbleTranslateApp(QMainWindow):
         screen.geometryChanged.connect(self.capture_service.invalidate)
         self.capture_service.invalidate()
 
-    def _prepare_capture_ui(self):
-        if self._shutting_down:
-            return
-        # 提前完成字体、布局和原生窗口初始化，不显示窗口或改变焦点。
-        if not self.overlay:
-            self._create_overlay()
-        self.overlay.ensurePolished()
-        self.overlay.winId()
-        bubble = self.ensure_bubble()
-        bubble.ensurePolished()
-
     def _create_overlay(self):
         self.overlay = CaptureOverlay()
         self.overlay.area_selected.connect(self.request_llm_translation)
@@ -343,7 +326,7 @@ class BubbleTranslateApp(QMainWindow):
 
         pixmap = QPixmap.fromImage(frame)
         
-        # macOS 重新创建窗口以刷新焦点状态；其他平台复用已预热的窗口。
+        # macOS 重新创建窗口以刷新焦点状态；其他平台复用已有窗口。
         if self.overlay and sys.platform == "darwin":
             self.overlay.close()
             self.overlay.deleteLater()
@@ -563,8 +546,6 @@ class BubbleTranslateApp(QMainWindow):
         QApplication.instance().removeEventFilter(self.event_filter)
         self._capture_pending = False
         self._capture_generation += 1
-        self._ui_warm_up_timer.stop()
-        self._capture_warm_up_timer.stop()
         self._clear_translation_stream()
         self._capture_prepare_timer.stop()
         self.capture_service.stop()

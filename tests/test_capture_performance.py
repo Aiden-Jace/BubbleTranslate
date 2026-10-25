@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QEventLoop, QPoint, QRect, QTimer, Qt
+from PySide6.QtCore import QEvent, QEventLoop, QPoint, QRect, QTimer, Qt
 from PySide6.QtGui import QColor, QImage, QPixmap
 from PySide6.QtWidgets import QApplication
 
@@ -20,6 +20,30 @@ class CapturePerformanceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])
+
+    def test_idle_startup_does_not_create_capture_ui_or_grab_desktop(self):
+        with (
+            patch("src.main.HotkeyListener.start"),
+            patch("src.main.HotkeyListener.stop"),
+            patch.object(BubbleTranslateApp, "init_tray", lambda obj: setattr(obj, "tray_icon", Mock())),
+            patch("src.core.screenshot.mss.mss") as create_screen,
+        ):
+            controller = BubbleTranslateApp()
+            try:
+                loop = QEventLoop()
+                # 覆盖原来 300ms / 500ms 的预热窗口，确认空闲启动不做隐式工作。
+                QTimer.singleShot(800, loop.quit)
+                loop.exec()
+                self.assertIsNone(controller.overlay)
+                self.assertIsNone(controller.bubble)
+                create_screen.assert_not_called()
+                # 首次实际使用仍能创建气泡，后续使用复用同一实例。
+                bubble = controller.ensure_bubble()
+                self.assertIs(controller.ensure_bubble(), bubble)
+            finally:
+                controller._shutdown()
+                controller.deleteLater()
+                QApplication.sendPostedEvents(None, QEvent.DeferredDelete)
 
     def test_capture_runs_off_gui_thread_and_reuses_backend(self):
         thread_ids = []
